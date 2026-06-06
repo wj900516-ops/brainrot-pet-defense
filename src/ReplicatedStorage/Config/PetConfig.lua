@@ -1,0 +1,38 @@
+-- PetConfig (ModuleScript)
+-- 放在 ReplicatedStorage > Config > PetConfig
+-- 宠物配置表（Phase 5）：当前仅定义一只"起始宠物"。
+-- 数据驱动，PetService 据此生成/驱动宠物。占位视觉用代码构建，无需美术资源。
+--
+-- 字段说明：
+--   id              : string   唯一标识
+--   displayName     : string   宠物头顶显示名
+--   attackInterval  : number   两次攻击的间隔（秒）。保守取值，避免过快完成任务
+--   followOffset    : Vector3  相对主人 HumanoidRootPart 的跟随偏移
+--   followStiffness : number   每帧朝目标插值的系数（0..1，越大越"硬"）
+--   visual          : table    占位视觉（size / color / material）
+
+local PetConfig = {}
+
+PetConfig.StarterPetId = "starter_toast"
+
+PetConfig.Pets = {
+	starter_toast = {
+		id = "starter_toast",
+		displayName = "Toasty",
+		attackInterval = 2.25, -- 保守：约每 2.25s 攻击一次（假人 3 HP → 约 6.75s 击败）
+		followOffset = Vector3.new(3, 2, 3),
+		followStiffness = 0.15,
+		visual = {
+			size = Vector3.new(1.6, 1.6, 1.6),
+			color = Color3.fromRGB(245, 205, 120),
+			material = Enum.Material.SmoothPlastic,
+		},
+	},
+}
+
+-- 返回起始宠物定义（找不到则返回 nil，由 PetService 兜底）。
+function PetConfig.GetStarterPet()
+	return PetConfig.Pets[PetConfig.StarterPetId]
+end
+
+return PetConfig

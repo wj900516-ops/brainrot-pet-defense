@@ -16,6 +16,7 @@ local PlayerDataService = require(Services:WaitForChild("PlayerDataService"))
 local TaskService = require(Services:WaitForChild("TaskService"))
 local GameEventService = require(Services:WaitForChild("GameEventService"))
 local DummyTargetService = require(Services:WaitForChild("DummyTargetService"))
+local PetService = require(Services:WaitForChild("PetService"))
 
 -- 加载远程入口（服务端在此创建 RemoteEvent 实例）
 local Net = require(ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Net"))
@@ -71,10 +72,16 @@ local function onPlayerAdded(player)
 	-- 主动推送一次。若客户端此时尚未连接监听，客户端启动时也会再 "Request"。
 	pushData(player)
 	pushTask(player)
+
+	-- Phase 5：在数据/任务恢复之后生成起始宠物。
+	PetService.SpawnPet(player)
 end
 
 local function onPlayerRemoving(player)
-	-- 离开时先保存（pcall + 重试；加载失败的会话会自动跳过保存以免覆盖云端）。
+	-- 先清理宠物（停止其攻击与跟随），再保存数据。
+	PetService.DespawnPet(player)
+
+	-- 离开时保存（pcall + 重试；加载失败的会话会自动跳过保存以免覆盖云端）。
 	PlayerDataService.SaveData(player)
 	PlayerDataService.ClearData(player)
 	TaskService.ClearTask(player)
@@ -98,6 +105,9 @@ end)
 
 -- 启动周期自动保存（安全网；对 PlayerRemoving / BindToClose 的补充，不是替代）。
 PlayerDataService.StartAutoSave()
+
+-- Phase 5：启动宠物系统（每位玩家一只起始宠物，主人靠近假人时自动攻击）。
+PetService.Start()
 
 -- ---------- Remote 处理 ----------
 -- PlayerDataRemote：客户端请求最新公开数据
@@ -133,4 +143,4 @@ end)
 -- 生成训练假人（纯服务端 ClickDetector，无需新增 RemoteEvent）。
 DummyTargetService.Start()
 
-print("[ServerInit] Ready. Phase 4 player data persistence online.")
+print("[ServerInit] Ready. Phase 5 starter pet online.")
