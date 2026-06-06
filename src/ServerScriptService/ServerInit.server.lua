@@ -57,8 +57,16 @@ end
 
 -- ---------- 玩家生命周期 ----------
 local function onPlayerAdded(player)
-	PlayerDataService.InitData(player)
-	TaskService.AssignStarterTask(player)
+	-- 加载存档（会 yield；pcall + 有限重试 + 失败回退默认值，绝不崩服）。
+	PlayerDataService.LoadData(player)
+
+	-- 若玩家在加载期间离开，则不再恢复任务/推送 UI。
+	if not player.Parent then
+		return
+	end
+
+	-- 加载完成后再恢复任务状态（按存档 id/进度，或起始任务）。
+	TaskService.RestoreOrAssign(player)
 
 	-- 主动推送一次。若客户端此时尚未连接监听，客户端启动时也会再 "Request"。
 	pushData(player)
@@ -66,6 +74,8 @@ local function onPlayerAdded(player)
 end
 
 local function onPlayerRemoving(player)
+	-- 离开时先保存（pcall + 重试；加载失败的会话会自动跳过保存以免覆盖云端）。
+	PlayerDataService.SaveData(player)
 	PlayerDataService.ClearData(player)
 	TaskService.ClearTask(player)
 end
@@ -73,10 +83,21 @@ end
 Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(onPlayerRemoving)
 
--- 处理脚本加载前就已在场的玩家（Studio Play Solo 常见情况）
+-- 处理脚本加载前就已在场的玩家（Studio Play Solo 常见情况）。
+-- 用 task.spawn 避免加载 yield 阻塞后续玩家的初始化。
 for _, player in ipairs(Players:GetPlayers()) do
-	onPlayerAdded(player)
+	task.spawn(onPlayerAdded, player)
 end
+
+-- 服务器关闭时保存所有在场玩家（Studio 停止 / 服务器关停）。
+game:BindToClose(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		PlayerDataService.SaveData(player)
+	end
+end)
+
+-- 启动周期自动保存（安全网；对 PlayerRemoving / BindToClose 的补充，不是替代）。
+PlayerDataService.StartAutoSave()
 
 -- ---------- Remote 处理 ----------
 -- PlayerDataRemote：客户端请求最新公开数据
@@ -112,4 +133,4 @@ end)
 -- 生成训练假人（纯服务端 ClickDetector，无需新增 RemoteEvent）。
 DummyTargetService.Start()
 
-print("[ServerInit] Ready. Phase 3 config-driven task chain online.")
+print("[ServerInit] Ready. Phase 4 player data persistence online.")

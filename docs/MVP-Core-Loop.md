@@ -65,7 +65,9 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
 
 ## 下一步的扩展点（给后续 CCGS / Cursor）
 
-1. **持久化**：在 `PlayerDataService.InitData`（读档）与 `ClearData`（存档）内接入 DataStore，其余代码无需改动。
+1. ~~**持久化**：在 `PlayerDataService` 内接入 DataStore~~ —— **✅ 已在 Phase 4 完成**：
+   `PlayerDataService` 通过原生 `DataStoreService`（安全封装：pcall + 有限重试 + 失败回退 + BindToClose）
+   持久化 Coins/Level/XP/任务状态等；`TaskService.RestoreOrAssign` 负责重进后恢复任务。详见 [`Phase4-Persistence.md`](Phase4-Persistence.md)。
 2. ~~**更多任务**：把 `TaskService` 内的 `STARTER_TASK` 提取为 `ReplicatedStorage/Config/TaskConfig`~~ —— **✅ 已在 Phase 3 完成**：
    任务现由 [`ReplicatedStorage/Config/TaskConfig.lua`](../src/ReplicatedStorage/Config/TaskConfig.lua) 数据驱动，
    支持起始任务链与可重复 fallback。详见 [`Phase3-TaskConfig.md`](Phase3-TaskConfig.md)。
