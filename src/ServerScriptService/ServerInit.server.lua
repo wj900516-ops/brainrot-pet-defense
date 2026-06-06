@@ -96,6 +96,9 @@ game:BindToClose(function()
 	end
 end)
 
+-- 启动周期自动保存（安全网；对 PlayerRemoving / BindToClose 的补充，不是替代）。
+PlayerDataService.StartAutoSave()
+
 -- ---------- Remote 处理 ----------
 -- PlayerDataRemote：客户端请求最新公开数据
 playerDataRemote.OnServerEvent:Connect(function(player, action)

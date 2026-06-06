@@ -10,6 +10,7 @@
 -- 本模块不依赖其他游戏 Service（最底层），不感知 Remote。
 
 local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
 
 local PlayerDataService = {}
 
@@ -19,6 +20,8 @@ local DATASTORE_NAME = "PlayerData_v1"
 local MAX_RETRIES = 3
 local RETRY_DELAY = 2 -- 秒
 local XP_PER_LEVEL = 100 -- 每级所需经验（XP 表示当前等级内进度 0 ~ XP_PER_LEVEL-1）
+local AUTO_SAVE_INTERVAL_SECONDS = 180 -- 周期自动保存间隔（安全网）
+local AUTO_SAVE_STAGGER_SECONDS = 0.1 -- 同批玩家之间的轻微错峰，避免同帧批量 SetAsync
 
 -- ---------- 运行时状态 ----------
 local dataByPlayer = {} -- [player] = dataTable
@@ -305,6 +308,38 @@ end
 function PlayerDataService.ClearData(player)
 	dataByPlayer[player] = nil
 	saveBlocked[player] = nil
+end
+
+-- ---------- 周期自动保存（安全网） ----------
+-- 由 ServerInit 在启动时调用一次（幂等）。这是对 PlayerRemoving / BindToClose 保存的补充，
+-- 不是替代：用于降低服务器崩溃 / 异常关闭导致的进度丢失窗口。
+local autoSaveStarted = false
+function PlayerDataService.StartAutoSave()
+	if autoSaveStarted then
+		return
+	end
+	autoSaveStarted = true
+
+	task.spawn(function()
+		while true do
+			-- 先等待一个完整间隔，避免上线即批量保存；也保证循环绝不会变成紧密空转。
+			task.wait(AUTO_SAVE_INTERVAL_SECONDS)
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if dataByPlayer[player] then
+					-- SaveData 内部已 pcall 且尊重 saveBlocked（加载失败的会话会被跳过，
+					-- 因此自动保存不会用默认数据覆盖云端好数据）；外层再 pcall 双保险，
+					-- 确保任一玩家保存失败/抛错都不会中断整个自动保存循环。
+					local ok, err = pcall(PlayerDataService.SaveData, player)
+					if not ok then
+						warn("[PlayerDataService] 自动保存玩家 " .. player.Name .. " 时异常：" .. tostring(err))
+					end
+					-- 轻微错峰，避免同一帧内对多名玩家批量 SetAsync。
+					task.wait(AUTO_SAVE_STAGGER_SECONDS)
+				end
+			end
+		end
+	end)
 end
 
 return PlayerDataService
