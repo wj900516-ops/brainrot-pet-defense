@@ -12,6 +12,11 @@ local Net = require(ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Net"
 local playerDataRemote = Net.PlayerDataRemote()
 local taskRemote = Net.TaskRemote()
 
+-- Dev-only flag. The "Do Action" button is a DEBUG trigger for the task loop.
+-- Phase 2 introduced the real action (attacking the Training Dummy in-world),
+-- so this button is no longer the primary loop. Set to false to hide it for playtests/release.
+local DEBUG_DO_ACTION = false
+
 -- ===================== Build UI =====================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MainUI"
@@ -163,7 +168,8 @@ doButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 doButton.Font = Enum.Font.GothamBold
 doButton.TextSize = 18
 doButton.AutoButtonColor = true
-doButton.Text = "Do Action"
+doButton.Text = "Do Action (Debug)"
+doButton.Visible = DEBUG_DO_ACTION
 doButton.Parent = panel
 
 local buttonCorner = Instance.new("UICorner")

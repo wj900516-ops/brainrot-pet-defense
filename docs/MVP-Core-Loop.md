@@ -6,9 +6,15 @@
 ## 核心循环
 
 ```
-玩家加入 → 初始化数据 → 分配起始任务 → 点击 "Do Action"
+玩家加入 → 初始化数据 → 分配起始任务 → 触发一次行动
         → 完成任务 → 发放金币 + 经验 → UI 刷新 → 任务重置/重复
 ```
+
+**触发"一次行动"的来源：**
+- **真实行动（Phase 2）**：在世界中击败训练假人（Training Dummy）。详见 [`Phase2-DummyTarget.md`](Phase2-DummyTarget.md)。
+- **调试按钮**：MainUI 的 `Do Action (Debug)` 按钮，受 `DEBUG_DO_ACTION` 开关控制，仅供测试。
+
+两者最终都走服务端同一个入口 `ServerInit.grantActionProgress(player)` → `TaskService.AddProgress(player, 1)`。
 
 ## 模块与职责（分层，无循环依赖）
 
