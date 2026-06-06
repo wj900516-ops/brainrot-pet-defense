@@ -39,9 +39,13 @@
 
 ## 防刷 / 冷却
 
+- **服务端距离校验** `MAX_VALID_HIT_DISTANCE = 40`：每次命中都在服务端计算玩家角色
+  `HumanoidRootPart` 到假人的实际距离，超出则判定无效。**不依赖** `ClickDetector.MaxActivationDistance`
+  （客户端可被篡改）。距离校验不通过 → 不扣血、不加进度。
 - **每玩家命中冷却** `HIT_COOLDOWN = 0.2s`：同一玩家两次有效命中需间隔 ≥0.2s，防连点刷。
 - **单次击败保证**：扣血归零时立即 `alive=false`，收尾阶段的多余点击不会重复触发 `EnemyDefeated`。
 - **重生延迟** `RESPAWN_DELAY = 1.5s`：击败后假人进入不可命中状态直到重生。
+- **离开清理**：`Players.PlayerRemoving` 时清除该玩家的命中冷却记录。
 
 ## 可调参数（DummyTargetService 顶部）
 
@@ -51,7 +55,8 @@
 | `HIT_COOLDOWN` | 0.2 | 每玩家命中冷却（秒） |
 | `RESPAWN_DELAY` | 1.5 | 击败后重生延迟（秒） |
 | `SPAWN_POSITION` | (0, 5, -12) | 假人世界坐标（按地图微调） |
-| `CLICK_DISTANCE` | 32 | ClickDetector 最大激活距离 |
+| `CLICK_DISTANCE` | 32 | ClickDetector 最大激活距离（仅客户端便利） |
+| `MAX_VALID_HIT_DISTANCE` | 40 | **服务端**距离校验上限（HRP→假人） |
 
 ## 给后续 CCGS / Codex 的扩展点
 

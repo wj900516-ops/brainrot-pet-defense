@@ -37,7 +37,9 @@
 
 `TaskRemote`
 - C→S `"Request"` → 回推当前任务
-- C→S `"DoAction"` → 进度 +1，完成则结算
+- C→S `"DoAction"` → **默认禁用的调试通道**。自 Phase 2 起，真实进度来自训练假人循环；
+  服务端的 `ENABLE_DEBUG_DO_ACTION` 默认为 `false`，此请求会被**安全忽略**（不加进度、不结算、不发奖励）。
+  仅当显式开启该开关（且客户端 `DEBUG_DO_ACTION=true` 才会显示按钮）时，才会走 `grantActionProgress`。
 - S→C `"Update", task` → `{ id, title, goal, progress, rewardCoins, rewardXP }`
 - S→C `"Reward", rewardResult` → `{ coinsAdded, xpAdded, newCoins, newXP, level }`
 
@@ -58,5 +60,8 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
 
 1. **持久化**：在 `PlayerDataService.InitData`（读档）与 `ClearData`（存档）内接入 DataStore，其余代码无需改动。
 2. **更多任务**：把 `TaskService` 内的 `STARTER_TASK` 提取为 `ReplicatedStorage/Config/TaskConfig`，并支持任务队列/链。
-3. **真实行动**：把 `"DoAction"` 测试按钮替换为真实游戏事件（如击杀敌人）调用 `TaskService.AddProgress`。
-4. **防作弊**：`DoAction` 当前无频率限制，正式化时需在服务端校验。
+3. ~~**真实行动**：把 `"DoAction"` 测试按钮替换为真实游戏事件~~ —— **✅ 已在 Phase 2 完成**：
+   真实进度现由训练假人循环（`DummyTargetService` → `GameEventService.EnemyDefeated` → `TaskService.AddProgress`）驱动；
+   `"DoAction"` 已降级为默认禁用的调试通道。详见 [`Phase2-DummyTarget.md`](Phase2-DummyTarget.md)。
+4. **防作弊（进行中）**：训练假人路径已具备服务端校验 —— 每玩家命中冷却、单次击败 one-shot 守卫、
+   以及服务端到角色 `HumanoidRootPart` 的距离校验（`MAX_VALID_HIT_DISTANCE`）。后续真实战斗系统应沿用同样的服务端权威校验。

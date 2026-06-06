@@ -14,6 +14,7 @@
 --   * 所有血量逻辑在服务端，客户端无法直接造成伤害或加进度。
 
 local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
 
 local GameEventService = require(script.Parent.GameEventService)
 
@@ -25,7 +26,10 @@ local MAX_HP = 3 -- 几次点击击败
 local HIT_COOLDOWN = 0.2 -- 同一玩家两次有效命中的最小间隔（秒），防连点刷
 local RESPAWN_DELAY = 1.5 -- 击败后多久重生（秒）
 local SPAWN_POSITION = Vector3.new(0, 5, -12) -- 假人世界坐标（按地图微调）
-local CLICK_DISTANCE = 32 -- ClickDetector 最大激活距离
+local CLICK_DISTANCE = 32 -- ClickDetector 最大激活距离（仅客户端便利，不可信）
+-- 服务端独立的距离校验上限。不可仅依赖 ClickDetector.MaxActivationDistance（客户端可被篡改）。
+-- 比 CLICK_DISTANCE 略大，留出"角色到假人表面"与"中心点"的余量，避免误杀正常边缘点击。
+local MAX_VALID_HIT_DISTANCE = 40
 
 -- ---------- 运行时状态 ----------
 local dummyPart = nil
@@ -108,12 +112,35 @@ local function respawn()
 	updateHpLabel()
 end
 
+-- 服务端距离校验：从玩家角色的 HumanoidRootPart 到假人位置的实际距离。
+-- 不信任 ClickDetector.MaxActivationDistance（仅客户端便利）。距离过远则判定无效命中。
+local function isWithinValidRange(player)
+	if not dummyPart then
+		return false
+	end
+	local character = player.Character
+	if not character then
+		return false
+	end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return false
+	end
+	local distance = (hrp.Position - dummyPart.Position).Magnitude
+	return distance <= MAX_VALID_HIT_DISTANCE
+end
+
 -- ---------- 公开 API ----------
 
 -- 处理一次命中（由 ClickDetector 在服务端调用）。
--- 仅做：冷却校验 -> 扣血 -> 反馈 -> 击败时广播 EnemyDefeated。
+-- 仅做：距离校验 -> 冷却校验 -> 扣血 -> 反馈 -> 击败时广播 EnemyDefeated。
 function DummyTargetService.HandleHit(player)
 	if not alive or not player then
+		return
+	end
+
+	-- 服务端距离校验：拒绝来自过远位置的命中（防伪造/瞬移点击）。不通过则不加任何进度。
+	if not isWithinValidRange(player) then
 		return
 	end
 
@@ -161,6 +188,11 @@ function DummyTargetService.Start(options)
 
 	buildDummy()
 	respawn() -- 初始化血量/状态并刷新文字
+
+	-- 玩家离开时清理其命中冷却记录，避免 lastHitByPlayer 长期累积。
+	Players.PlayerRemoving:Connect(function(player)
+		lastHitByPlayer[player] = nil
+	end)
 end
 
 return DummyTargetService
