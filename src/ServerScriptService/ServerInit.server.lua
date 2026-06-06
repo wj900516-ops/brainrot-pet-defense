@@ -31,19 +31,28 @@ local function pushTask(player)
 	taskRemote:FireClient(player, "Update", TaskService.GetCurrentTask(player))
 end
 
--- ---------- 统一的"行动 -> 进度 -> 奖励 -> 推送"入口 ----------
--- 这是任何真实游戏行动（击败假人）与调试按钮共用的唯一进度通道。
--- 服务端独占：是否加进度、是否完成、是否发奖励都由这里决定。
-local function grantActionProgress(player)
-	local result = TaskService.AddProgress(player, 1)
+-- ---------- 统一的"进度结果 -> 推送"出口 ----------
+-- TaskService 负责全部决策（是否加进度 / 是否完成 / 是否发奖励 / 是否匹配），
+-- 并返回一致的结果对象：{ progressed, completed, task, reward, reason }。
+-- ServerInit 只负责把结果推送给客户端，保持编排层与 Service 的边界。
+local function pushProgressResult(player, result)
 	if not result then
 		return
 	end
-	if result.completed then
+	-- 完成时推送奖励反馈
+	if result.completed and result.reward then
 		taskRemote:FireClient(player, "Reward", result.reward)
 	end
-	pushTask(player)
-	pushData(player)
+	-- 有进度变化（含完成后已切换到下一个任务）才推送，UI 即时刷新到最新任务/数据
+	if result.progressed then
+		-- 结果对象已带最新公开任务数据，直接复用（与再次 GetCurrentTask 等价，省一次查询）。
+		if result.task ~= nil then
+			taskRemote:FireClient(player, "Update", result.task)
+		else
+			pushTask(player)
+		end
+		pushData(player)
+	end
 end
 
 -- ---------- 玩家生命周期 ----------
@@ -84,21 +93,23 @@ taskRemote.OnServerEvent:Connect(function(player, action)
 		pushTask(player)
 	elseif action == "DoAction" then
 		-- 调试通道：仅在开关开启时生效；关闭时安全忽略（不发进度/奖励）。
+		-- 注意：调试通道走通用 AddProgress（不做 type/target 匹配），仅供开发测试。
 		if ENABLE_DEBUG_DO_ACTION then
-			grantActionProgress(player)
+			pushProgressResult(player, TaskService.AddProgress(player, 1))
 		end
 		-- 关闭状态下静默忽略，避免被刷请求时刷屏 Output。
 	end
 end)
 
--- ---------- Phase 2：真实游戏行动（训练假人） ----------
--- 监听服务端事件总线：假人被击败 -> 加一次进度（复用同一通道）。
--- DummyTargetService 不发奖励，奖励决策只发生在这里。
+-- ---------- Phase 2/3：真实游戏行动（训练假人 + 任务匹配） ----------
+-- 监听服务端事件总线：假人被击败 -> 交给 TaskService 做 type/target 匹配与进度推进。
+-- 仅当当前任务为 DefeatEnemy 且 target 匹配 enemyId 时才会加进度/发奖励；否则安全忽略。
+-- DummyTargetService 不发奖励、不依赖 TaskService；匹配与奖励决策在 TaskService 完成。
 GameEventService.EnemyDefeated.Event:Connect(function(player, enemyId)
-	grantActionProgress(player)
+	pushProgressResult(player, TaskService.HandleEnemyDefeated(player, enemyId))
 end)
 
 -- 生成训练假人（纯服务端 ClickDetector，无需新增 RemoteEvent）。
 DummyTargetService.Start()
 
-print("[ServerInit] MVP core loop ready. Phase 2 dummy target online.")
+print("[ServerInit] Ready. Phase 3 config-driven task chain online.")

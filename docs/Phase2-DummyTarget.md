@@ -17,12 +17,14 @@
   → HP 归零 → alive=false（保证只触发一次）
       → GameEventService.EnemyDefeated:Fire(player, "TrainingDummy")
           → ServerInit 监听 EnemyDefeated.Event
-              → grantActionProgress(player)
-                  → TaskService.AddProgress(player, 1)   ← 复用 Phase 1 既有通道（未改动）
-                      → CompleteTask → RewardService → PlayerDataService
-                  → 推送 Task / Data / Reward 到 MainUI
+              → TaskService.HandleEnemyDefeated(player, "TrainingDummy")   ← Phase 3：type/target 匹配
+                  → 匹配则 AddProgress(+1)：CompleteTask → RewardService → PlayerDataService
+                  → 返回结果对象 { progressed, completed, task, reward, reason }
+              → ServerInit.pushProgressResult(player, result)   → 推送 Task / Data / Reward 到 MainUI
   → RESPAWN_DELAY 后假人重生
 ```
+> 注：Phase 3 起，进度路由改为 `TaskService.HandleEnemyDefeated` + `ServerInit.pushProgressResult`。
+> 详见 [`Phase3-TaskConfig.md`](Phase3-TaskConfig.md)。
 
 ## 分层与边界
 
