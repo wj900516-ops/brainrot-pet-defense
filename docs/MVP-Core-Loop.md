@@ -12,6 +12,7 @@
 
 **触发"一次行动"的来源：**
 - **真实行动（Phase 2/3）**：在世界中击败训练假人（Training Dummy）。详见 [`Phase2-DummyTarget.md`](Phase2-DummyTarget.md)、[`Phase3-TaskConfig.md`](Phase3-TaskConfig.md)。
+- **起始宠物（Phase 5）**：宠物在主人靠近假人时自动攻击，复用同一击败链路。详见 [`Phase5-StarterPet.md`](Phase5-StarterPet.md)。
 - **调试按钮**：MainUI 的 `Do Action (Debug)` 按钮，受 `DEBUG_DO_ACTION` 开关控制，默认隐藏，仅供测试。
 
 **当前进度流（Phase 3）**：
