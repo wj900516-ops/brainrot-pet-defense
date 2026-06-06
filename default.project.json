@@ -1,0 +1,22 @@
+{
+  "name": "BrainrotPetDefense",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$path": "src/ReplicatedStorage"
+    },
+
+    "ServerScriptService": {
+      "$path": "src/ServerScriptService"
+    },
+
+    "StarterGui": {
+      "$path": "src/StarterGui"
+    },
+
+    "StarterPlayer": {
+      "$path": "src/StarterPlayer"
+    }
+  }
+}

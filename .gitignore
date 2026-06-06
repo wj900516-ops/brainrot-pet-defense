@@ -1,0 +1,42 @@
+# ===== Roblox / Rojo =====
+# Built place & model files (binary + XML) — these are build artifacts, not source.
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+*.rbxm
+*.rbxmx
+
+# Rojo / build output
+/build/
+*.rbxl.bak
+
+# ===== Tooling (Aftman / Foreman / Wally) =====
+# Keep manifests (aftman.toml, wally.toml) tracked; ignore installed packages & lockfile noise.
+/Packages/
+/ServerPackages/
+/DevPackages/
+wally.lock
+
+# ===== Roblox Studio / Lua tooling caches =====
+.luau-analyze/
+sourcemap.json
+
+# ===== OS / Editor =====
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.vscode/
+.idea/
+
+# ===== Logs / temp =====
+*.log
+/tmp/
+
+# ===== Claude Code Game Studios — ephemeral session state =====
+# (matches paths described in .claude/docs/context-management.md)
+.claude/settings.local.json
+production/session-state/active.md
+production/session-logs/

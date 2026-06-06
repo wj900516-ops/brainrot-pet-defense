@@ -1,0 +1,29 @@
+Day 1 任务 - Brainrot Pet Defense
+今天只搭骨架，不写逻辑！
+
+10条待办：
+1. 新建工程 BrainrotPetDefense
+2. Workspace 里建文件夹：Map / PathNodes / TowerSpots，放 SpawnPoint 和 Base 两个 Part
+3. 搭白模地图：矩形地面 200x300 studs，中间一条弯路
+4. PathNodes 里放 6 个点：Node1→Node6，从 SpawnPoint 弯到 Base，间距 30-50 studs
+5. TowerSpots 里放 4 个塔位：Spot1-4，绿色 6x6，在路径两侧
+6. ReplicatedStorage 建文件夹：Remotes / Config / Units / Enemies
+7. ServerScriptService 建 4 个脚本：GameManager / WaveManager / EnemyService / UnitService（今天可以空的）
+8. Config 里建 3 个 ModuleScript：UnitConfig / EnemyConfig / WaveConfig（代码我写好了发你）
+9. StarterGui 建 MainUI，放 4 个控件：CoinsLabel（左上）WaveLabel（顶中）BaseHpLabel（右上）PlaceTowerBtn（底中）
+10. 跑一遍确认地图/路径点/UI都正常
+
+今天禁止做：开蛋/商城/存档/多地图/花哨特效
+
+初始数值：
+- 玩家：200金币，基地20血
+- Toast Dog（塔）：价格100，伤害10，间隔1秒，范围15
+- Lag Blob（怪）：血50，速度8，到基地扣1血，杀了给15金
+- Boss Stinky Bread：血300，速度5，扣5血，杀了给50金
+- Wave1：5个Blob(1.5秒间隔)
+- Wave2：8个Blob(1.2秒间隔)
+- Wave3：5个Blob+1个Boss(1秒间隔)
+
+Config 代码我放桌面 BrainrotPetDefense/src 文件夹里了，直接复制进 Studio。
+
+明天 Day2 开始写：怪物移动 → 基地扣血 → 塔自动攻击
