@@ -142,6 +142,12 @@ local FALLBACK_INDEX = resolveFallbackIndex()
 -- [player] = { chainIndex = number, def = sanitizedDef, progress = number }
 local stateByPlayer = {}
 
+-- 任务 id -> 链下标（用于按 id 恢复存档任务）。
+local CHAIN_INDEX_BY_ID = {}
+for index, def in ipairs(CHAIN) do
+	CHAIN_INDEX_BY_ID[def.id] = index
+end
+
 -- 转换为对外的"公开任务数据"（与 MainUI 兼容）。
 local function toPublic(state)
 	if not state or not state.def then
@@ -168,14 +174,31 @@ local function makeResult(progressed, completed, state, reward, reason)
 	}
 end
 
-local function assignByIndex(player, index)
+-- 把当前任务状态（仅标识/进度/下标，不含完整定义）写回 PlayerDataService，供持久化。
+local function syncToData(player)
+	local state = stateByPlayer[player]
+	if not state or not state.def then
+		return
+	end
+	PlayerDataService.SetTaskState(player, {
+		currentTaskId = state.def.id,
+		currentTaskProgress = state.progress,
+		taskChainIndex = state.chainIndex,
+	})
+end
+
+-- 设置玩家当前任务为链上某下标，并指定起始进度。
+-- 进度会 clamp 到 0..goal-1，因此恢复存档时不会"一进游戏就自动完成"。同时写回 PlayerDataService。
+local function setState(player, index, progress)
 	local def = CHAIN[index]
 	if not def then
 		-- 兜底：不应发生，但保证不崩
 		index = #CHAIN
 		def = CHAIN[index]
 	end
-	stateByPlayer[player] = { chainIndex = index, def = def, progress = 0 }
+	local clamped = math.clamp(math.floor(progress or 0), 0, math.max(def.goal - 1, 0))
+	stateByPlayer[player] = { chainIndex = index, def = def, progress = clamped }
+	syncToData(player)
 	return stateByPlayer[player]
 end
 
@@ -184,9 +207,9 @@ local function advanceTask(player)
 	local state = stateByPlayer[player]
 	local nextIndex = (state and state.chainIndex or 0) + 1
 	if CHAIN[nextIndex] then
-		return assignByIndex(player, nextIndex)
+		return setState(player, nextIndex, 0)
 	end
-	return assignByIndex(player, FALLBACK_INDEX)
+	return setState(player, FALLBACK_INDEX, 0)
 end
 
 -- 结算当前任务：发奖励、记录完成、推进到下一个任务。返回完成结果。
@@ -219,8 +242,36 @@ end
 
 -- 给玩家分配链上的第一个任务（也用于初始化）。
 function TaskService.AssignStarterTask(player)
-	local state = assignByIndex(player, 1)
+	local state = setState(player, 1, 0)
 	return toPublic(state)
+end
+
+-- 从持久化的任务状态恢复；无/过时则安全回退。解析后写回 canonical 状态。
+function TaskService.RestoreOrAssign(player)
+	local saved = PlayerDataService.GetTaskState(player)
+
+	-- 无存档任务（新玩家）→ 起始任务
+	if not saved or type(saved.currentTaskId) ~= "string" then
+		return toPublic(setState(player, 1, 0))
+	end
+
+	-- task id 仍存在于配置 → 按 id 恢复（进度 clamp 到 0..goal-1）
+	local indexById = CHAIN_INDEX_BY_ID[saved.currentTaskId]
+	if indexById then
+		return toPublic(setState(player, indexById, saved.currentTaskProgress or 0))
+	end
+
+	-- task id 过时（配置变更/删除）→ 尝试用 taskChainIndex（进度重置为 0）
+	warn(string.format("[TaskService] 存档任务 id '%s' 已不在配置中", tostring(saved.currentTaskId)))
+	local ci = saved.taskChainIndex
+	if type(ci) == "number" and ci >= 1 and ci <= #CHAIN then
+		warn(string.format("[TaskService] 回退到 taskChainIndex=%d（进度重置为 0）", ci))
+		return toPublic(setState(player, ci, 0))
+	end
+
+	-- 都无效 → 起始任务
+	warn("[TaskService] taskChainIndex 也无效，重置为起始任务")
+	return toPublic(setState(player, 1, 0))
 end
 
 -- 返回玩家当前任务的"公开数据"（与 MainUI 兼容；可能为 nil）。
@@ -242,6 +293,7 @@ function TaskService.AddProgress(player, amount)
 		return completeTask(player)
 	end
 
+	syncToData(player) -- 写回最新进度，供持久化
 	return makeResult(true, false, state, nil, "progressed")
 end
 
