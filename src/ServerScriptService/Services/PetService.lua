@@ -59,12 +59,7 @@ local function normalizeDef(def)
 	}
 end
 
-local function getStarterDef()
-	local raw = PetConfig and PetConfig.GetStarterPet and PetConfig.GetStarterPet() or nil
-	return normalizeDef(raw)
-end
-
--- 按 petId 解析规范化定义；找不到返回 nil（由调用方决定兜底）。
+-- 按 petId 解析规范化定义；找不到返回 nil（由调用方决定如何处理）。
 local function getDefByPetId(petId)
 	if PetConfig and PetConfig.GetPet then
 		local raw = PetConfig.GetPet(petId)
@@ -139,14 +134,18 @@ function PetService.SpawnPet(player)
 		return
 	end
 
-	-- 按 petId 解析视觉；petId 过时（配置中不存在）→ 告警并用起始视觉兜底。
+	-- 按 petId 解析视觉。petId 过时/缺失（配置中不存在）→ 清晰告警并【跳过生成】：
+	-- 不回退起始视觉（避免掩盖配置错误、误导玩家）、不修改玩家数据、不授予新宠物、不崩服。
+	-- 待后续迁移/清理阶段统一处理过时的宠物类型。
 	local def = getDefByPetId(entry.petId)
 	if not def then
 		warn(string.format(
-			"[PetService] petId '%s' 在 PetConfig 中不存在，使用起始视觉兜底",
+			"[PetService] 跳过生成：装备宠物 uid '%s' 的 petId '%s' 在 PetConfig 中不存在（已过时/缺失）。"
+				.. "本 PR 不回退起始视觉、不修改玩家数据、不授予新宠物。",
+			tostring(entry.uid),
 			tostring(entry.petId)
 		))
-		def = getStarterDef()
+		return
 	end
 
 	local model = buildPetModel(def, player)

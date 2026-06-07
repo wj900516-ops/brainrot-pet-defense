@@ -69,10 +69,14 @@ SpawnPet(player)
   → PlayerDataService.GetEquippedPetEntries(player) 取第一只
       ├─ 无装备条目（EnsureStarterPet 后不应发生）→ 告警并跳过生成（不再隐式给 Toasty）
       └─ 有条目 → PetConfig.GetPet(entry.petId) 解析视觉
-            ├─ petId 过时（配置不存在）→ 告警并用起始视觉兜底
+            ├─ petId 过时/缺失（配置不存在）→ 清晰告警（含 uid + petId）并【跳过生成】
+            │     不回退起始视觉、不修改玩家数据、不授予新宠物、不崩服
             └─ 正常 → 用该定义构建占位宠物
   → 攻击仍走 Option A：PetService → DummyTargetService.HandleHit(owner)（未改动）
 ```
+
+> **过时 petId 策略（PR #5 评审收紧）**：回退起始视觉会掩盖配置错误、误导玩家。
+> 因此过时/缺失的 petId 一律**告警 + 跳过生成**，让问题可见，留待后续迁移/清理阶段统一处理。
 
 PetService 现在依赖 `PlayerDataService`（读装备）与 `PetConfig`（解析视觉），但**不**依赖
 `TaskService` / `RewardService` / `GameEventService`，也**不**发放金币/经验/任务进度/奖励/写 DataStore。
