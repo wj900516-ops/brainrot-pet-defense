@@ -17,6 +17,7 @@ local folder = script.Parent -- "Remotes" 文件夹
 
 Net.PlayerDataRemoteName = "PlayerDataRemote"
 Net.TaskRemoteName = "TaskRemote"
+Net.PetRemoteName = "PetRemote"
 
 -- 获取（服务端则创建）指定名称的 RemoteEvent。
 local function getEvent(name)
@@ -42,6 +43,10 @@ end
 
 function Net.TaskRemote()
 	return getEvent(Net.TaskRemoteName)
+end
+
+function Net.PetRemote()
+	return getEvent(Net.PetRemoteName)
 end
 
 return Net

@@ -78,6 +78,22 @@ function PetService.GetStarterPetId()
 	return "starter_toast"
 end
 
+-- 按 petId 返回显示名（供 ServerInit 注入公开宠物数据）。找不到则回退 petId / "Pet"。
+function PetService.GetDisplayName(petId)
+	if PetConfig and PetConfig.GetPet then
+		local def = PetConfig.GetPet(petId)
+		if type(def) == "table" and type(def.displayName) == "string" and def.displayName ~= "" then
+			return def.displayName
+		end
+	end
+	return (type(petId) == "string" and petId ~= "") and petId or "Pet"
+end
+
+-- petId 是否存在于 PetConfig（供 Equip 校验：不允许装备无法生成的过时宠物）。
+function PetService.HasPet(petId)
+	return getDefByPetId(petId) ~= nil
+end
+
 -- ---------- 运行时状态 ----------
 -- [player] = { model = Part, def = normalizedDef, lastAttack = number }
 local petsByPlayer = {}
@@ -170,6 +186,15 @@ function PetService.DespawnPet(player)
 		pet.model:Destroy()
 	end
 	petsByPlayer[player] = nil
+end
+
+-- 根据当前"已装备宠物"数据刷新宠物模型：先销毁再按数据生成。
+-- 装备变化（Equip/Unequip）后调用：
+--   * 已装备 → 重新生成对应宠物；
+--   * 零装备 → SpawnPet 会因无装备而跳过，等价于卸下。
+function PetService.RefreshPet(player)
+	PetService.DespawnPet(player)
+	PetService.SpawnPet(player)
 end
 
 -- 启动宠物系统（幂等）：单个 Heartbeat 驱动所有宠物的跟随与攻击。
