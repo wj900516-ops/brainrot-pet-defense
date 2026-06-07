@@ -51,6 +51,8 @@ local function normalizeDef(def)
 		id = type(def.id) == "string" and def.id or "starter_fallback",
 		displayName = type(def.displayName) == "string" and def.displayName or "Pet",
 		attackInterval = (type(def.attackInterval) == "number" and def.attackInterval > 0) and def.attackInterval or 2.25,
+		attackRange = (type(def.attackRange) == "number" and def.attackRange > 0) and def.attackRange or 18,
+		attackDamage = (type(def.attackDamage) == "number" and def.attackDamage > 0) and def.attackDamage or 12,
 		followOffset = (typeof(def.followOffset) == "Vector3") and def.followOffset or Vector3.new(3, 2, 3),
 		followStiffness = (type(def.followStiffness) == "number") and math.clamp(def.followStiffness, 0.01, 1) or 0.15,
 		size = (typeof(visual.size) == "Vector3") and visual.size or Vector3.new(1.6, 1.6, 1.6),
@@ -195,6 +197,16 @@ end
 function PetService.RefreshPet(player)
 	PetService.DespawnPet(player)
 	PetService.SpawnPet(player)
+end
+
+-- 只读访问当前激活（已生成）的宠物，供 CombatService 做战斗判定（位置/属性）。
+-- 未装备/未生成 → 返回 nil。返回精简表（model + def），调用方应只读、不修改。
+function PetService.GetActivePet(player)
+	local pet = petsByPlayer[player]
+	if not pet or not pet.model then
+		return nil
+	end
+	return { model = pet.model, def = pet.def }
 end
 
 -- 启动宠物系统（幂等）：单个 Heartbeat 驱动所有宠物的跟随与攻击。

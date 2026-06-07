@@ -22,6 +22,10 @@ local TaskService = require(Services:WaitForChild("TaskService"))
 local GameEventService = require(Services:WaitForChild("GameEventService"))
 local DummyTargetService = require(Services:WaitForChild("DummyTargetService"))
 local PetService = require(Services:WaitForChild("PetService"))
+local RewardService = require(Services:WaitForChild("RewardService")) -- Phase 8：仅调用既有契约，不修改
+local EnemyService = require(Services:WaitForChild("EnemyService"))
+local WaveService = require(Services:WaitForChild("WaveService"))
+local CombatService = require(Services:WaitForChild("CombatService"))
 
 -- 加载远程入口（服务端在此创建 RemoteEvent 实例）
 local Net = require(ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Net"))
@@ -166,6 +170,22 @@ end)
 -- 生成训练假人（纯服务端 ClickDetector，无需新增 RemoteEvent）。
 DummyTargetService.Start()
 
+-- ---------- Phase 8：敌人波次 + 宠物战斗循环 ----------
+-- 敌人击杀 -> 通过既有 RewardService 发奖励（窄适配：构造 reward 形状的表，不改 RewardService 契约），
+-- 再推送最新玩家数据给客户端。CombatService 只做伤害判定，不发奖励、不写 DataStore。
+local function onEnemyKilled(player, enemy)
+	if not player or not enemy then
+		return
+	end
+	-- 复用 RewardService.GiveReward(player, task)：task 只需带 rewardCoins/rewardXP 字段。
+	RewardService.GiveReward(player, { rewardCoins = enemy.reward or 0, rewardXP = 0 })
+	pushData(player) -- 刷新 MainUI 的金币/等级/经验
+end
+
+EnemyService.Start() -- 敌人移动/清理循环
+CombatService.Start({ onEnemyKilled = onEnemyKilled }) -- 宠物→敌人战斗
+WaveService.Start() -- 周期刷怪
+
 -- ---------- Phase 7：宠物 UI 的装备/卸下（服务端权威） ----------
 -- 客户端只发"意图"：RequestPets / EquipPet / UnequipPet(+uid)。
 -- 所有校验与状态变更都在服务端；客户端不能授予宠物、不能直接改 Inventory/EquippedPets。
@@ -235,4 +255,4 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 7 pet UI online.")
+print("[ServerInit] Ready. Phase 8 combat loop online.")

@@ -32,10 +32,23 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 | 奖励 | `ServerScriptService/Services/RewardService.lua` | 发金币/经验，返回结构化结果 | PlayerDataService |
 | 任务 | `ServerScriptService/Services/TaskService.lua` | 分配/跟踪/结算任务 | RewardService, PlayerDataService |
 | 网络 | `ReplicatedStorage/Remotes/Net.lua` | 按需创建/获取 RemoteEvent | 无 |
-| 编排 | `ServerScriptService/ServerInit.server.lua` | 连接 PlayerAdded、接线 Remote | 全部 |
+| 宠物 | `ServerScriptService/Services/PetService.lua` | 起始宠物生成/跟随/攻击；只读 `GetActivePet` | PlayerDataService, PetConfig, DummyTargetService |
+| 敌人 | `ServerScriptService/Services/EnemyService.lua`（Phase 8） | 敌人生成/移动/受伤/死亡/逃逸 | EnemyConfig |
+| 刷怪 | `ServerScriptService/Services/WaveService.lua`（Phase 8） | 周期生成敌人（存活上限） | EnemyService |
+| 战斗 | `ServerScriptService/Services/CombatService.lua`（Phase 8） | 宠物→敌人伤害判定；击杀回调 | PetService, EnemyService |
+| 编排 | `ServerScriptService/ServerInit.server.lua` | 连接 PlayerAdded、接线 Remote、击杀→奖励 | 全部 |
 | 界面 | `StarterGui/MainUI/MainUI.client.lua` | 代码构建 UI、收发 Remote | Net |
 
 **关键原则**：Service 层不感知 Remote。所有客户端通信集中在 `ServerInit`（服务端）与 `MainUI`（客户端）两个编排层，便于测试与替换。
+
+## 战斗循环（Phase 8）
+
+```
+WaveService（周期）→ EnemyService.SpawnEnemy → 敌人朝基地移动
+CombatService（每帧）→ 已装备宠物攻击范围内最近敌人 → EnemyService.DamageEnemy
+  → 致命一击 → ServerInit.onEnemyKilled → RewardService.GiveReward({rewardCoins}) → pushData
+```
+敌人/宠物为服务端 Anchored Part，自动复制，**无新增 remote**；战斗 server-authoritative。详见 [`Phase8-CombatLoop.md`](Phase8-CombatLoop.md)。
 
 ## Remote 协议（action 字符串 + 负载）
 
