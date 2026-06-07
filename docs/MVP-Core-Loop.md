@@ -33,7 +33,7 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 | 任务 | `ServerScriptService/Services/TaskService.lua` | 分配/跟踪/结算任务 | RewardService, PlayerDataService |
 | 网络 | `ReplicatedStorage/Remotes/Net.lua` | 按需创建/获取 RemoteEvent | 无 |
 | 宠物 | `ServerScriptService/Services/PetService.lua` | 起始宠物生成/跟随/攻击；只读 `GetActivePet` | PlayerDataService, PetConfig, DummyTargetService |
-| 敌人 | `ServerScriptService/Services/EnemyService.lua`（Phase 8） | 敌人生成/移动/受伤/死亡/逃逸；`ClearAll` | EnemyConfig |
+| 敌人 | `ServerScriptService/Services/EnemyService.lua`（Phase 8/10） | 敌人生成/航点移动/受伤/死亡/逃逸；`ClearAll`/`GetBasePosition` | EnemyConfig |
 | 波次/会话 | `ServerScriptService/Services/WaveService.lua`（Phase 8/9） | 波次进程 + 基地血量 + 失败条件 + 基地状态板 | EnemyService |
 | 战斗 | `ServerScriptService/Services/CombatService.lua`（Phase 8） | 宠物→敌人伤害判定；击杀回调 | PetService, EnemyService |
 | 编排 | `ServerScriptService/ServerInit.server.lua` | 连接 PlayerAdded、接线 Remote、击杀→奖励 | 全部 |
@@ -56,6 +56,8 @@ CombatService（每帧）→ 已装备宠物攻击范围内最近敌人 → Enem
 WaveService：第 N 波生成固定数量 LagBlob → 全部解决（击杀/逃逸）→ 延迟 → 下一波
 击杀 → 奖励（Phase 8/8.5）；逃逸到达基地 → Base HP -1（不奖励）；Base HP=0 → 会话失败、停止刷怪
 基地状态板（世界 Billboard）显示 Wave / Base HP / 失败，**不改 MainUI**、无持久化。详见 [`Phase9-WaveBaseHP.md`](Phase9-WaveBaseHP.md)。
+
+Phase 10：敌人沿 `Workspace.EnemyPath` 航点（缺失则兜底直线）从路径起点走向终点（基地）；到达终点 = 逃逸扣血。详见 [`Phase10-RoutePathing.md`](Phase10-RoutePathing.md)。
 ```
 
 ## Remote 协议（action 字符串 + 负载）

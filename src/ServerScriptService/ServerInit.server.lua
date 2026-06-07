@@ -262,4 +262,4 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 9 wave + base HP online.")
+print("[ServerInit] Ready. Phase 10 route pathing online.")
