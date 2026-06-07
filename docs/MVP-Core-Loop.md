@@ -51,6 +51,11 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 - S→C `"Update", task` → 公开任务数据 `{ title, progress, goal, rewardCoins, rewardXP }`（Phase 3：配置驱动，详见 `Phase3-TaskConfig.md`）
 - S→C `"Reward", rewardResult` → `{ coinsAdded, xpAdded, newCoins, newXP, level }`
 
+`PetRemote`（Phase 7）
+- C→S `"RequestPets"` → 回推宠物列表
+- C→S `"EquipPet", uid` / `"UnequipPet", uid` → 服务端校验后改装备 + 刷新宠物 + 回推
+- S→C `"Pets", publicPets` → `{ { uid, petId, displayName, equipped } }`（加入时也推一次）。详见 [`Phase7-PetUI.md`](Phase7-PetUI.md)
+
 RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/` 文件夹下，**无需在 Studio 手动创建**。
 
 ## 数据结构（PlayerDataService）

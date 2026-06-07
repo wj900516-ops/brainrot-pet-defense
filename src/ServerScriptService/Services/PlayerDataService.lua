@@ -461,9 +461,71 @@ function PlayerDataService.EquipPet(player, uid)
 	return true
 end
 
--- 保证玩家拥有并装备了起始宠物：
---   * 一只都没有 → 授予并装备起始宠物（不重复授予）。
---   * 有宠物但无有效装备 → 装备已拥有的第一只（兜底，并告警）。
+-- 玩家是否拥有指定 uid。
+function PlayerDataService.IsPetOwned(player, uid)
+	local data = dataByPlayer[player]
+	if not data or type(uid) ~= "string" then
+		return false
+	end
+	for _, p in ipairs(data.Inventory.Pets) do
+		if p.uid == uid then
+			return true
+		end
+	end
+	return false
+end
+
+-- 卸下指定 uid（仅当其当前已装备才生效）。单槽：清空装备列表。返回是否发生变化。
+function PlayerDataService.UnequipPet(player, uid)
+	local data = dataByPlayer[player]
+	if not data or type(uid) ~= "string" then
+		return false
+	end
+	local isEquipped = false
+	for _, equippedUid in ipairs(data.EquippedPets) do
+		if equippedUid == uid then
+			isEquipped = true
+			break
+		end
+	end
+	if not isEquipped then
+		return false
+	end
+	-- 单槽：移除该 uid（等价于清空）。允许"零装备"状态并持久化。
+	local remaining = {}
+	for _, equippedUid in ipairs(data.EquippedPets) do
+		if equippedUid ~= uid then
+			table.insert(remaining, equippedUid)
+		end
+	end
+	data.EquippedPets = remaining
+	return true
+end
+
+-- 返回可安全发送给客户端的宠物列表（不含完整内部数据，不含 displayName —— 由上层用 PetConfig 注入）。
+-- 形如 { { uid, petId, equipped } }。
+function PlayerDataService.GetPublicPets(player)
+	local data = dataByPlayer[player]
+	if not data then
+		return {}
+	end
+	local equippedSet = {}
+	for _, uid in ipairs(data.EquippedPets) do
+		equippedSet[uid] = true
+	end
+	local out = {}
+	for _, p in ipairs(data.Inventory.Pets) do
+		table.insert(out, {
+			uid = p.uid,
+			petId = p.petId,
+			equipped = equippedSet[p.uid] == true,
+		})
+	end
+	return out
+end
+
+-- 保证玩家拥有并装备了起始宠物（仅在拥有 0 只宠物时授予并装备）。
+-- Phase 7：不再"有宠物但无装备时自动装备第一只" —— 以支持玩家"主动卸下并持久保持零装备"。
 function PlayerDataService.EnsureStarterPet(player, starterPetId)
 	local data = dataByPlayer[player]
 	if not data then
@@ -471,31 +533,14 @@ function PlayerDataService.EnsureStarterPet(player, starterPetId)
 	end
 	starterPetId = (type(starterPetId) == "string" and starterPetId ~= "") and starterPetId or "starter_toast"
 
-	-- 无任何宠物 → 授予并装备起始宠物
+	-- 仅当一只都没有时：授予并装备起始宠物（首次加入 / v1 迁移）。
 	if #data.Inventory.Pets == 0 then
 		local uid = PlayerDataService.GrantPet(player, starterPetId)
 		if uid then
 			PlayerDataService.EquipPet(player, uid)
 		end
-		return
 	end
-
-	-- 有宠物但无有效装备 → 装备第一只
-	local owned = {}
-	for _, p in ipairs(data.Inventory.Pets) do
-		owned[p.uid] = true
-	end
-	local hasValidEquipped = false
-	for _, uid in ipairs(data.EquippedPets) do
-		if owned[uid] then
-			hasValidEquipped = true
-			break
-		end
-	end
-	if not hasValidEquipped then
-		warn("[PlayerDataService] 无有效装备宠物，自动装备已拥有的第一只")
-		PlayerDataService.EquipPet(player, data.Inventory.Pets[1].uid)
-	end
+	-- 已拥有宠物 → 尊重存档中的装备状态（包括"零装备"），不自动改动。
 end
 
 -- 在保存之后调用：清理内存数据与会话标记。
