@@ -23,6 +23,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DummyTargetService = require(script.Parent.DummyTargetService)
 local PlayerDataService = require(script.Parent.PlayerDataService)
 
+-- 调试日志开关。默认 false：把"无已装备宠物，跳过生成"等预期情况静默
+-- （主动卸下后刷新会走到这里，属正常流程，不应作为 warn 噪音）。
+local DEBUG_LOG = false
+
 local PetService = {}
 
 -- ---------- 加载 PetConfig（容错，绝不无限 yield） ----------
@@ -148,7 +152,10 @@ function PetService.SpawnPet(player)
 	local entries = PlayerDataService.GetEquippedPetEntries(player)
 	local entry = entries[1]
 	if not entry then
-		warn(string.format("[PetService] 玩家 %s 无已装备宠物，跳过生成", player.Name))
+		-- 预期情况（如主动卸下后刷新）：默认静默，仅在 DEBUG_LOG 时打印。行为不变（跳过生成）。
+		if DEBUG_LOG then
+			print(string.format("[PetService] 玩家 %s 无已装备宠物，跳过生成", player.Name))
+		end
 		return
 	end
 
