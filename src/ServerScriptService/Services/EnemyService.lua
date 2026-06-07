@@ -18,10 +18,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local EnemyService = {}
 
 -- ---------- 可调参数（Tuning Knobs） ----------
--- Phase 10：路径/航点（route）。优先使用 Workspace.EnemyPath 下的 Waypoint_* 部件（人工摆放）；
--- 缺失/不足时用内置兜底直线路径（spawn -> base），并在 Workspace.EnemyPath 下生成不可见调试航点。
-local PATH_FOLDER_NAME = "EnemyPath"
-local WAYPOINT_PREFIX = "Waypoint_"
+-- Phase 10：路径/航点（route）。按顺序解析路径文件夹：
+--   1) Workspace.EnemyPath（首选）   2) Workspace.PathNodes（兼容现有地图）
+-- 任一文件夹下的 BasePart 子物体都被当作航点（按名称排序）；需 ≥ 2 个。
+-- 都无效时用内置兜底直线路径（spawn -> base），并在 Workspace.EnemyPath 下生成不可见调试航点。
+local PATH_FOLDER_NAMES = { "EnemyPath", "PathNodes" } -- 解析顺序
+local FALLBACK_PATH_FOLDER = "EnemyPath" -- 兜底航点创建所在文件夹
+local WAYPOINT_PREFIX = "Waypoint_" -- 仅用于兜底航点命名
 local FALLBACK_SPAWN = Vector3.new(0, 3, -40) -- 兜底路径起点（敌人出生）
 local FALLBACK_BASE = Vector3.new(0, 3, 0) -- 兜底路径终点（基地）
 local FALLBACK_SEGMENTS = 4 -- 兜底直线分段（生成 5 个航点）
@@ -75,37 +78,49 @@ local started = false
 local route = nil
 local routeResolved = false
 
--- 读取 Workspace.EnemyPath 下的 Waypoint_* 部件（按名称排序）。少于 2 个则视为无效（返回 nil）。
-local function readWorkspacePath()
-	local folder = Workspace:FindFirstChild(PATH_FOLDER_NAME)
+-- 提取名称末尾的数字（"Node10"->10、"Waypoint_02"->2、"Waypoint_1"->1）。无则返回 nil。
+local function trailingNumber(name)
+	local numStr = string.match(name, "(%d+)%s*$")
+	return numStr and tonumber(numStr) or nil
+end
+
+-- 读取指定名称的路径文件夹下的航点（所有 BasePart 子物体）。
+-- 接受任意命名（Waypoint_01 / Node1 …），不要求特定前缀。少于 2 个则视为无效（返回 nil）。
+-- 自然数字排序：有末尾数字者按数字升序（Node1<Node2<…<Node10）；
+--   无数字者退回名称排序，并排在有数字者之后。该比较为全序，table.sort 永不报错。
+local function readPathFolder(folderName)
+	local folder = Workspace:FindFirstChild(folderName)
 	if not folder then
 		return nil
 	end
-	local parts = {}
+	local items = {}
 	for _, child in ipairs(folder:GetChildren()) do
-		if child:IsA("BasePart") and child.Name:sub(1, #WAYPOINT_PREFIX) == WAYPOINT_PREFIX then
-			table.insert(parts, child)
+		if child:IsA("BasePart") then
+			table.insert(items, { part = child, num = trailingNumber(child.Name) or math.huge, name = child.Name })
 		end
 	end
-	if #parts < 2 then
+	if #items < 2 then
 		return nil
 	end
-	table.sort(parts, function(a, b)
-		return a.Name < b.Name
+	table.sort(items, function(a, b)
+		if a.num ~= b.num then
+			return a.num < b.num
+		end
+		return a.name < b.name
 	end)
 	local points = {}
-	for _, part in ipairs(parts) do
-		table.insert(points, part.Position)
+	for _, item in ipairs(items) do
+		table.insert(points, item.part.Position)
 	end
 	return points
 end
 
 -- 构建兜底直线路径（spawn -> base），并在 Workspace.EnemyPath 下生成不可见调试航点。
 local function buildFallbackPath()
-	local folder = Workspace:FindFirstChild(PATH_FOLDER_NAME)
+	local folder = Workspace:FindFirstChild(FALLBACK_PATH_FOLDER)
 	if not folder then
 		folder = Instance.new("Folder")
-		folder.Name = PATH_FOLDER_NAME
+		folder.Name = FALLBACK_PATH_FOLDER
 		folder.Parent = Workspace
 	end
 	local points = {}
@@ -128,24 +143,27 @@ local function buildFallbackPath()
 	return points
 end
 
--- 解析路径（仅一次，memoized）。优先用 Workspace 航点，否则兜底直线。
+-- 解析路径（仅一次，memoized）。按 PATH_FOLDER_NAMES 顺序尝试；都无效则兜底直线。
 local function resolveRoute()
 	if routeResolved then
 		return route
 	end
 	routeResolved = true
-	local points = readWorkspacePath()
-	if points then
-		route = points
-		print(string.format("[EnemyService] 使用 Workspace.%s 路径（%d 个航点）", PATH_FOLDER_NAME, #points))
-	else
-		route = buildFallbackPath()
-		warn(string.format(
-			"[EnemyService] 未找到有效 Workspace.%s，使用内置兜底直线路径（%d 个航点）",
-			PATH_FOLDER_NAME,
-			#route
-		))
+
+	for _, folderName in ipairs(PATH_FOLDER_NAMES) do
+		local points = readPathFolder(folderName)
+		if points then
+			route = points
+			print(string.format("[EnemyService] 使用 Workspace.%s 路径（%d 个航点）", folderName, #points))
+			return route
+		end
 	end
+
+	route = buildFallbackPath()
+	warn(string.format(
+		"[EnemyService] 未找到有效 Workspace.EnemyPath / Workspace.PathNodes，使用内置兜底直线路径（%d 个航点）",
+		#route
+	))
 	return route
 end
 
