@@ -26,12 +26,14 @@ local RewardService = require(Services:WaitForChild("RewardService")) -- Phase 8
 local EnemyService = require(Services:WaitForChild("EnemyService"))
 local WaveService = require(Services:WaitForChild("WaveService"))
 local CombatService = require(Services:WaitForChild("CombatService"))
+local TowerService = require(Services:WaitForChild("TowerService"))
 
 -- 加载远程入口（服务端在此创建 RemoteEvent 实例）
 local Net = require(ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Net"))
 local playerDataRemote = Net.PlayerDataRemote()
 local taskRemote = Net.TaskRemote()
 local petRemote = Net.PetRemote()
+local towerRemote = Net.TowerRemote()
 
 -- ---------- 向客户端推送 ----------
 local function pushData(player)
@@ -192,6 +194,21 @@ end
 EnemyService.Start({ onEscaped = WaveService.OnEnemyEscaped }) -- 敌人移动/清理 + 逃逸回调
 CombatService.Start({ onEnemyKilled = onEnemyKilled }) -- 宠物→敌人战斗（击杀奖励，未改动）
 WaveService.Start() -- 波次进程 + 基地血量 + 失败条件
+TowerService.Start() -- Phase 11：塔放置（建塔文件夹 + 玩家离开清理）
+
+-- ---------- Phase 11：塔放置（服务端权威） ----------
+-- 客户端只发 "PlaceTower" 意图；服务端读取玩家角色位置并校验后放置。
+-- 客户端不能伪造位置/花费/拥有者，也不能免费造塔。
+towerRemote.OnServerEvent:Connect(function(player, action)
+	if action == "PlaceTower" then
+		local result = TowerService.TryPlaceTower(player)
+		if result and result.success then
+			pushData(player) -- 扣币后刷新 MainUI 金币
+		end
+		towerRemote:FireClient(player, "Result", result) -- 回推结果给客户端反馈
+	end
+	-- 未知 action：安全忽略。
+end)
 
 -- ---------- Phase 7：宠物 UI 的装备/卸下（服务端权威） ----------
 -- 客户端只发"意图"：RequestPets / EquipPet / UnequipPet(+uid)。
@@ -262,4 +279,4 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 10 route pathing online.")
+print("[ServerInit] Ready. Phase 11 tower placement online.")

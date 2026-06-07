@@ -251,6 +251,16 @@ function EnemyService.GetBasePosition()
 	return r[#r]
 end
 
+-- 返回路径航点位置的拷贝（只读）。供 TowerService 做"距路径过近"校验。
+function EnemyService.GetRoute()
+	local r = resolveRoute()
+	local out = {}
+	for _, p in ipairs(r) do
+		table.insert(out, p)
+	end
+	return out
+end
+
 -- 对敌人造成伤害。返回 true 当且仅当这一击把它从存活打到死亡（保证击杀只结算一次）。
 function EnemyService.DamageEnemy(enemy, amount)
 	if not enemy or not enemy.alive then
