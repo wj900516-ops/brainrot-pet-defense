@@ -37,7 +37,7 @@ ServerInit.onEnemyKilled
 - **死亡**：销毁模型并在清理过程移除记录。
 - **逃逸**：到达基地（距离 ≤ 4）→ 直接移除（本阶段无基地血量，不扣血、不奖励）。
 
-复用既有 `EnemyConfig`（`LagBlob`：health 50 / speed 8 / killReward 15），**未修改 EnemyConfig**。
+复用既有 `EnemyConfig`（`LagBlob`：health 24 / speed 4 / killReward 15；Phase 8 调平了 health/speed 以保证可击杀）。
 
 ## 战斗归属模型（CombatService）
 
@@ -47,7 +47,8 @@ ServerInit.onEnemyKilled
 - **击杀归属**：造成"致命一击"的宠物，其 **主人** 获得该敌人奖励（`onEnemyKilled(ownerPlayer, enemy)`）。
 - CombatService 自带每玩家战斗冷却表（`PlayerRemoving` 清理），**不污染 PetService 内部记录**，只读 `GetActivePet`。
 
-宠物战斗属性来自 `PetConfig`（`starter_toast`：`attackRange = 18`、`attackDamage = 12`、`attackInterval = 2.25`）。
+宠物战斗属性来自 `PetConfig`（`starter_toast`：`attackRange = 28`、`attackDamage = 15`、`attackInterval = 1.5`；
+Phase 8 调平：LagBlob 24 HP ÷ 15 ≈ 2 击、约 1.5s 内可击杀，敌人 speed 4 时有充足时间）。
 
 ## 奖励触发（reward trigger）
 
