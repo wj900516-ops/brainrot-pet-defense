@@ -57,12 +57,17 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
 
 ```lua
 {
+  DataVersion = 2,                 -- Phase 6：宠物库存/装备
   Coins = 0, Level = 1, XP = 0,
-  CompletedTasks = {},  -- [taskId] = 完成次数
-  Inventory = {}, Settings = {},
+  CompletedTasks = {},             -- [taskId] = 完成次数
+  Inventory = { Pets = { { uid, petId, acquiredAt } } },  -- Phase 6
+  EquippedPets = { "starter_toast_1" },                    -- Phase 6（数组，单槽）
+  Settings = {},
+  Task = { currentTaskId, currentTaskProgress, taskChainIndex },  -- Phase 3，持久化于 Phase 4
 }
 ```
 经验规则：`XP_PER_LEVEL = 100`，XP 满 100 自动升级并归零进入下一级。
+持久化与迁移见 [`Phase4-Persistence.md`](Phase4-Persistence.md)；宠物拥有/装备见 [`Phase6-PetInventory.md`](Phase6-PetInventory.md)。
 
 ## 下一步的扩展点（给后续 CCGS / Cursor）
 

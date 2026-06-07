@@ -66,6 +66,9 @@ local function onPlayerAdded(player)
 		return
 	end
 
+	-- Phase 6：确保拥有并装备起始宠物（首次/缺失时授予，不重复）。需在 SpawnPet 之前。
+	PlayerDataService.EnsureStarterPet(player, PetService.GetStarterPetId())
+
 	-- 加载完成后再恢复任务状态（按存档 id/进度，或起始任务）。
 	TaskService.RestoreOrAssign(player)
 
@@ -73,7 +76,7 @@ local function onPlayerAdded(player)
 	pushData(player)
 	pushTask(player)
 
-	-- Phase 5：在数据/任务恢复之后生成起始宠物。
+	-- Phase 5/6：根据已装备宠物数据生成宠物。
 	PetService.SpawnPet(player)
 end
 
@@ -143,4 +146,4 @@ end)
 -- 生成训练假人（纯服务端 ClickDetector，无需新增 RemoteEvent）。
 DummyTargetService.Start()
 
-print("[ServerInit] Ready. Phase 5 starter pet online.")
+print("[ServerInit] Ready. Phase 6 pet inventory online.")

@@ -21,6 +21,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DummyTargetService = require(script.Parent.DummyTargetService)
+local PlayerDataService = require(script.Parent.PlayerDataService)
 
 local PetService = {}
 
@@ -63,6 +64,25 @@ local function getStarterDef()
 	return normalizeDef(raw)
 end
 
+-- 按 petId 解析规范化定义；找不到返回 nil（由调用方决定兜底）。
+local function getDefByPetId(petId)
+	if PetConfig and PetConfig.GetPet then
+		local raw = PetConfig.GetPet(petId)
+		if type(raw) == "table" then
+			return normalizeDef(raw)
+		end
+	end
+	return nil
+end
+
+-- 返回起始宠物 id（供 ServerInit 调用 EnsureStarterPet）。
+function PetService.GetStarterPetId()
+	if PetConfig and type(PetConfig.StarterPetId) == "string" then
+		return PetConfig.StarterPetId
+	end
+	return "starter_toast"
+end
+
 -- ---------- 运行时状态 ----------
 -- [player] = { model = Part, def = normalizedDef, lastAttack = number }
 local petsByPlayer = {}
@@ -103,13 +123,32 @@ end
 
 -- ---------- 公开 API ----------
 
--- 为玩家生成起始宠物（幂等：已存在则不重复生成）。
+-- 为玩家生成"已装备"的宠物（幂等：已存在则不重复生成）。
+-- 数据驱动：从 PlayerDataService 读取已装备宠物，再用 PetConfig 解析视觉。
+-- 不再隐式假设每位玩家都有 Toasty —— 必须由 PlayerDataService 已授予/装备。
 function PetService.SpawnPet(player)
 	if petsByPlayer[player] then
 		return
 	end
 
-	local def = getStarterDef()
+	-- 取已装备宠物（单宠物：取第一只）。EnsureStarterPet 应已保证存在。
+	local entries = PlayerDataService.GetEquippedPetEntries(player)
+	local entry = entries[1]
+	if not entry then
+		warn(string.format("[PetService] 玩家 %s 无已装备宠物，跳过生成", player.Name))
+		return
+	end
+
+	-- 按 petId 解析视觉；petId 过时（配置中不存在）→ 告警并用起始视觉兜底。
+	local def = getDefByPetId(entry.petId)
+	if not def then
+		warn(string.format(
+			"[PetService] petId '%s' 在 PetConfig 中不存在，使用起始视觉兜底",
+			tostring(entry.petId)
+		))
+		def = getStarterDef()
+	end
+
 	local model = buildPetModel(def, player)
 
 	-- 初始位置：若角色已就绪则放在主人旁边，否则先放原点附近，等心跳循环拉过去。

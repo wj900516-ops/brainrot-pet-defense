@@ -35,4 +35,12 @@ function PetConfig.GetStarterPet()
 	return PetConfig.Pets[PetConfig.StarterPetId]
 end
 
+-- 按 petId 查找宠物定义（找不到返回 nil）。
+function PetConfig.GetPet(petId)
+	if type(petId) ~= "string" then
+		return nil
+	end
+	return PetConfig.Pets[petId]
+end
+
 return PetConfig
