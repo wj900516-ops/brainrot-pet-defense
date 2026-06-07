@@ -10,6 +10,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- 默认 false —— Phase 2 由真实的训练假人循环驱动进度，调试按钮通道关闭。
 local ENABLE_DEBUG_DO_ACTION = false
 
+-- Phase 7：宠物"变更类"动作（EquipPet/UnequipPet）的每玩家服务端去抖（防刷）。
+-- 在顶部声明，使 onPlayerRemoving 可清理其状态（local 必须先于使用处定义）。
+local PET_MUTATION_COOLDOWN_SECONDS = 0.5
+local lastPetMutation = {} -- [player] = os.clock()
+
 -- 加载服务（Services 文件夹与本脚本同在 ServerScriptService 下）
 local Services = script.Parent:WaitForChild("Services")
 local PlayerDataService = require(Services:WaitForChild("PlayerDataService"))
@@ -102,6 +107,7 @@ local function onPlayerRemoving(player)
 	PlayerDataService.SaveData(player)
 	PlayerDataService.ClearData(player)
 	TaskService.ClearTask(player)
+	lastPetMutation[player] = nil -- 清理宠物变更去抖状态
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -163,11 +169,29 @@ DummyTargetService.Start()
 -- ---------- Phase 7：宠物 UI 的装备/卸下（服务端权威） ----------
 -- 客户端只发"意图"：RequestPets / EquipPet / UnequipPet(+uid)。
 -- 所有校验与状态变更都在服务端；客户端不能授予宠物、不能直接改 Inventory/EquippedPets。
+--
+-- 服务端去抖：仅对"变更类"动作（EquipPet/UnequipPet）做每玩家冷却，安全忽略刷请求；
+-- 不影响 RequestPets（只读）。被冷却拦截时直接返回，不改状态、不刷屏 Output。
+-- （PET_MUTATION_COOLDOWN_SECONDS / lastPetMutation 在文件顶部声明，便于 onPlayerRemoving 清理。）
+local function petMutationAllowed(player)
+	local now = os.clock()
+	local last = lastPetMutation[player]
+	if last and (now - last) < PET_MUTATION_COOLDOWN_SECONDS then
+		return false -- 冷却中：静默忽略
+	end
+	lastPetMutation[player] = now
+	return true
+end
+
 petRemote.OnServerEvent:Connect(function(player, action, uid)
 	if action == "RequestPets" then
-		pushPets(player)
+		pushPets(player) -- 只读：不受去抖限制
 
 	elseif action == "EquipPet" then
+		-- 变更类动作：先过服务端去抖（防刷）。
+		if not petMutationAllowed(player) then
+			return
+		end
 		-- 校验：uid 为字符串 → 玩家拥有该 uid → 其 petId 在 PetConfig 中存在（否则无法生成）。
 		if type(uid) ~= "string" then
 			return
@@ -196,6 +220,10 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 		end
 
 	elseif action == "UnequipPet" then
+		-- 变更类动作：先过服务端去抖（防刷）。
+		if not petMutationAllowed(player) then
+			return
+		end
 		if type(uid) ~= "string" then
 			return
 		end

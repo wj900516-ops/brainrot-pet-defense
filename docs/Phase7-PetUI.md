@@ -52,6 +52,13 @@ publicPets = {
 **安全性**：客户端只发意图；不能授予宠物、不能直接改 `Inventory`/`EquippedPets`；
 未知 action / 非法 uid / 非拥有 uid / 过时 petId 全部被安全拒绝；Pet UI 不触发任何金币/经验/任务/奖励变更。
 
+**服务端去抖（防刷）**：`ServerInit` 对**变更类**动作做每玩家冷却
+`PET_MUTATION_COOLDOWN_SECONDS = 0.5s`：
+- 仅作用于 `EquipPet` / `UnequipPet`；**不影响** `RequestPets`（只读）。
+- 服务端独有；冷却中**直接返回、不改状态、不刷屏 Output**（静默忽略刷请求）。
+- `PlayerRemoving` 时清理该玩家的去抖记录。
+- 纯服务端，不引入任何客户端信任。
+
 ## PlayerDataService API 变化
 
 | API | 作用 |
@@ -83,9 +90,22 @@ publicPets = {
 
 ### 点击可靠性处理（Studio 鼠标点击问题）
 
-- 开关按钮 `Modal = true`：即使鼠标被锁定/捕获也释放光标用于 GUI 点击。
-- 每个按钮同时连接 `Activated` 与 `MouseButton1Click`（带去抖，单击只触发一次）。
-- ScreenGui `DisplayOrder = 100`、各元素高 `ZIndex`；按钮 `Active/Selectable = true`；无全屏遮挡 Frame。
+实现（与代码一致）：
+
+- ScreenGui `DisplayOrder = 1000`、`IgnoreGuiInset = true`、`ResetOnSpawn = false`、`ZIndexBehavior = Sibling`；
+  各元素高 `ZIndex`（按钮 200 / 面板 100 / 内容 101–103）。
+- **非按钮 GuiObject（面板/标签/列表/行）一律 `Active = false`**，避免透明 Frame/Label 拦截点击；
+  仅 TextButton 设 `Active/Selectable = true`。
+- 每个按钮同时连接 `Activated` 与 `MouseButton1Click`；并额外提供一条
+  **`UserInputService.InputBegan` 矩形命中后备**（按鼠标/触摸坐标命中按钮）。三条路径共享同一去抖，
+  保证一次点击只触发一次。
+- **未使用 `Modal`**：`Modal = true` 会全局释放/改变鼠标光标，可能干扰其它 GUI 与相机/输入，
+  因此移除；改用上面的"矩形命中后备 + 非按钮 Active=false"来提升可点击性。
+- **未新增任何全屏遮挡 Frame**。
+
+> **关于鼠标点击的现实说明**：**人工手动鼠标点击在 Roblox Studio 中验证通过**；
+> 但 Codex / Computer Use 的**自动化鼠标点击在 Studio 中可能不稳定**（环境因素，非游戏代码问题）。
+> 因此并不保证自动化鼠标一定可点击；键盘 P/E/U 后备走的是**完全相同的服务端权威路径**，可作为可靠验证手段。
 
 ### 键盘快捷键（临时 MVP / 可访问性后备）
 
