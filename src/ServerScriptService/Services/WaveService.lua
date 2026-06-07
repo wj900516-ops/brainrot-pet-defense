@@ -24,7 +24,7 @@ local INTER_WAVE_DELAY_SECONDS = 5 -- 两波之间的延迟
 local SPAWN_STAGGER_SECONDS = 1 -- 同波内敌人之间的生成间隔
 local BASE_MAX_HP = 10 -- 基地初始血量
 local ENEMY_ID = "LagBlob" -- 本阶段只刷一种敌人
-local BASE_POSITION = Vector3.new(0, 3, 0) -- 与 EnemyService 的基地点一致
+local FALLBACK_BASE_POSITION = Vector3.new(0, 3, 0) -- 兜底（EnemyService 未提供时）
 
 -- ---------- 会话状态（内存，不持久化） ----------
 local waveNumber = 0
@@ -35,13 +35,22 @@ local statusLabel = nil
 
 -- ---------- 基地状态板（世界 Billboard，非 MainUI） ----------
 local function buildStatusBoard()
+	-- Phase 10：基地放在路径终点（最后一个航点）。EnemyService 未提供时回退到固定点。
+	local basePos = FALLBACK_BASE_POSITION
+	if EnemyService.GetBasePosition then
+		local ok, pos = pcall(EnemyService.GetBasePosition)
+		if ok and typeof(pos) == "Vector3" then
+			basePos = pos
+		end
+	end
+
 	local pad = Instance.new("Part")
 	pad.Name = "BasePad"
 	pad.Anchored = true
 	pad.CanCollide = false
 	pad.CanQuery = false
 	pad.Size = Vector3.new(8, 1, 8)
-	pad.Position = BASE_POSITION - Vector3.new(0, 2, 0)
+	pad.Position = basePos - Vector3.new(0, 2, 0)
 	pad.Color = Color3.fromRGB(70, 110, 200)
 	pad.Transparency = 0.3
 	pad.Material = Enum.Material.SmoothPlastic
