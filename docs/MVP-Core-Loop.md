@@ -33,8 +33,8 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 | 任务 | `ServerScriptService/Services/TaskService.lua` | 分配/跟踪/结算任务 | RewardService, PlayerDataService |
 | 网络 | `ReplicatedStorage/Remotes/Net.lua` | 按需创建/获取 RemoteEvent | 无 |
 | 宠物 | `ServerScriptService/Services/PetService.lua` | 起始宠物生成/跟随/攻击；只读 `GetActivePet` | PlayerDataService, PetConfig, DummyTargetService |
-| 敌人 | `ServerScriptService/Services/EnemyService.lua`（Phase 8） | 敌人生成/移动/受伤/死亡/逃逸 | EnemyConfig |
-| 刷怪 | `ServerScriptService/Services/WaveService.lua`（Phase 8） | 周期生成敌人（存活上限） | EnemyService |
+| 敌人 | `ServerScriptService/Services/EnemyService.lua`（Phase 8） | 敌人生成/移动/受伤/死亡/逃逸；`ClearAll` | EnemyConfig |
+| 波次/会话 | `ServerScriptService/Services/WaveService.lua`（Phase 8/9） | 波次进程 + 基地血量 + 失败条件 + 基地状态板 | EnemyService |
 | 战斗 | `ServerScriptService/Services/CombatService.lua`（Phase 8） | 宠物→敌人伤害判定；击杀回调 | PetService, EnemyService |
 | 编排 | `ServerScriptService/ServerInit.server.lua` | 连接 PlayerAdded、接线 Remote、击杀→奖励 | 全部 |
 | 界面 | `StarterGui/MainUI/MainUI.client.lua` | 代码构建 UI、收发 Remote | Net |
@@ -49,6 +49,14 @@ CombatService（每帧）→ 已装备宠物攻击范围内最近敌人 → Enem
   → 致命一击 → ServerInit.onEnemyKilled → RewardService.GiveReward({rewardCoins}) → pushData
 ```
 敌人/宠物为服务端 Anchored Part，自动复制，**无新增 remote**；战斗 server-authoritative。详见 [`Phase8-CombatLoop.md`](Phase8-CombatLoop.md)。
+
+## 防御会话（Phase 9）
+
+```
+WaveService：第 N 波生成固定数量 LagBlob → 全部解决（击杀/逃逸）→ 延迟 → 下一波
+击杀 → 奖励（Phase 8/8.5）；逃逸到达基地 → Base HP -1（不奖励）；Base HP=0 → 会话失败、停止刷怪
+基地状态板（世界 Billboard）显示 Wave / Base HP / 失败，**不改 MainUI**、无持久化。详见 [`Phase9-WaveBaseHP.md`](Phase9-WaveBaseHP.md)。
+```
 
 ## Remote 协议（action 字符串 + 负载）
 

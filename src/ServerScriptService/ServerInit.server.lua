@@ -188,9 +188,10 @@ local function onEnemyKilled(player, enemy)
 	end
 end
 
-EnemyService.Start() -- 敌人移动/清理循环
-CombatService.Start({ onEnemyKilled = onEnemyKilled }) -- 宠物→敌人战斗
-WaveService.Start() -- 周期刷怪
+-- Phase 9：敌人逃逸（到达基地）→ WaveService 扣基地血量（逃逸不发奖励）。
+EnemyService.Start({ onEscaped = WaveService.OnEnemyEscaped }) -- 敌人移动/清理 + 逃逸回调
+CombatService.Start({ onEnemyKilled = onEnemyKilled }) -- 宠物→敌人战斗（击杀奖励，未改动）
+WaveService.Start() -- 波次进程 + 基地血量 + 失败条件
 
 -- ---------- Phase 7：宠物 UI 的装备/卸下（服务端权威） ----------
 -- 客户端只发"意图"：RequestPets / EquipPet / UnequipPet(+uid)。
@@ -261,4 +262,4 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 8 combat loop online.")
+print("[ServerInit] Ready. Phase 9 wave + base HP online.")

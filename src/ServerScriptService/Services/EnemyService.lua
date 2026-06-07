@@ -170,6 +170,17 @@ function EnemyService.GetAliveEnemies()
 	return out
 end
 
+-- 清空所有敌人（Phase 9：会话失败时清理残余敌人）。不发奖励、不扣基地血量。
+-- 注意：本函数可能在移动心跳的 onEscaped 回调中被调用（此时正以 ipairs 遍历 enemies），
+-- 因此【不做结构性移除】，仅置 alive=false + 销毁模型；
+-- 实际从数组移除交给 Start 心跳末尾的清理过程（反向 table.remove）安全完成。
+function EnemyService.ClearAll()
+	for _, enemy in ipairs(enemies) do
+		enemy.alive = false
+		destroyEnemy(enemy)
+	end
+end
+
 -- 启动移动 + 清理循环（幂等）。options.onEscaped(enemy) 可选。
 function EnemyService.Start(options)
 	if started then
