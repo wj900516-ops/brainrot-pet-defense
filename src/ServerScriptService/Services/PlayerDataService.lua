@@ -15,7 +15,9 @@ local Players = game:GetService("Players")
 local PlayerDataService = {}
 
 -- ---------- 常量 ----------
-local CURRENT_DATA_VERSION = 1
+local CURRENT_DATA_VERSION = 2 -- Phase 6：新增宠物库存/装备
+-- 注意：DataStore 名称保持 "PlayerData_v1" 不变，避免孤立 Phase 4/5 存档。
+-- schema 迁移通过记录内的 DataVersion 完成，而非更换 DataStore。
 local DATASTORE_NAME = "PlayerData_v1"
 local MAX_RETRIES = 3
 local RETRY_DELAY = 2 -- 秒
@@ -50,7 +52,10 @@ local function defaultData()
 		Level = 1,
 		XP = 0,
 		CompletedTasks = {}, -- [taskId] = 完成次数
-		Inventory = {},
+		Inventory = {
+			Pets = {}, -- 数组：{ uid, petId, acquiredAt }
+		},
+		EquippedPets = {}, -- 数组：已装备宠物的 uid（当前仅 1 个，但用数组保持前向兼容）
 		Settings = {},
 		Task = {
 			currentTaskId = nil, -- 新玩家无任务 id，由 TaskService 分配起始任务后写回
@@ -60,8 +65,50 @@ local function defaultData()
 	}
 end
 
+-- 校验并规范化宠物列表（数组：{uid, petId, acquiredAt}）。返回全新表，无共享引用。
+local function sanitizePets(loadedPets)
+	local pets = {}
+	if type(loadedPets) ~= "table" then
+		return pets
+	end
+	for _, entry in ipairs(loadedPets) do
+		if type(entry) == "table"
+			and type(entry.uid) == "string" and entry.uid ~= ""
+			and type(entry.petId) == "string" and entry.petId ~= ""
+		then
+			table.insert(pets, {
+				uid = entry.uid,
+				petId = entry.petId,
+				acquiredAt = type(entry.acquiredAt) == "number" and entry.acquiredAt or 0,
+			})
+		else
+			warn("[PlayerDataService] 跳过非法宠物条目")
+		end
+	end
+	return pets
+end
+
+-- 校验装备列表：仅保留指向"已拥有 uid"的字符串。返回全新数组。
+local function sanitizeEquipped(loadedEquipped, ownedPets)
+	local owned = {}
+	for _, p in ipairs(ownedPets) do
+		owned[p.uid] = true
+	end
+	local equipped = {}
+	if type(loadedEquipped) == "table" then
+		for _, uid in ipairs(loadedEquipped) do
+			if type(uid) == "string" and owned[uid] then
+				table.insert(equipped, uid)
+			elseif type(uid) == "string" then
+				warn(string.format("[PlayerDataService] 丢弃无主装备 uid '%s'", uid))
+			end
+		end
+	end
+	return equipped
+end
+
 -- 把"读到的存档"合并进一份全新默认数据（缺字段补默认、坏字段忽略并告警）。
--- 这同时充当 v1 的迁移逻辑：未来版本可在此按 DataVersion 分支处理。
+-- 这同时充当 v1→v2 的迁移逻辑：保留旧字段，补齐 Inventory.Pets / EquippedPets。
 local function reconcile(loaded)
 	local data = defaultData()
 	if type(loaded) ~= "table" then
@@ -97,12 +144,23 @@ local function reconcile(loaded)
 		end
 	end
 
-	if type(loaded.Inventory) == "table" then
-		data.Inventory = deepCopy(loaded.Inventory)
-	end
 	if type(loaded.Settings) == "table" then
 		data.Settings = deepCopy(loaded.Settings)
 	end
+
+	-- 宠物库存（v2）。保留旧 Inventory 的其它字段（若有），并规范化 Pets 数组。
+	-- v1 存档没有 Inventory.Pets → 这里补成空数组（之后由 EnsureStarterPet 授予起始宠物）。
+	if type(loaded.Inventory) == "table" then
+		local inv = deepCopy(loaded.Inventory)
+		inv.Pets = sanitizePets(loaded.Inventory.Pets)
+		data.Inventory = inv
+	end
+	if type(data.Inventory.Pets) ~= "table" then
+		data.Inventory.Pets = {}
+	end
+
+	-- 装备列表：仅保留指向已拥有 uid 的项（v1 存档无此字段 → 空数组）。
+	data.EquippedPets = sanitizeEquipped(loaded.EquippedPets, data.Inventory.Pets)
 
 	if type(loaded.Task) == "table" then
 		local t = loaded.Task
@@ -302,6 +360,142 @@ function PlayerDataService.SetTaskState(player, taskState)
 	data.Task.currentTaskId = taskState.currentTaskId
 	data.Task.currentTaskProgress = taskState.currentTaskProgress or 0
 	data.Task.taskChainIndex = taskState.taskChainIndex or 1
+end
+
+-- ---------- 宠物库存 / 装备 API（PlayerDataService 拥有持久化宠物状态） ----------
+
+-- 返回拥有宠物列表的拷贝（数组：{uid, petId, acquiredAt}）。
+function PlayerDataService.GetPets(player)
+	local data = dataByPlayer[player]
+	if not data then
+		return {}
+	end
+	local out = {}
+	for _, p in ipairs(data.Inventory.Pets) do
+		table.insert(out, { uid = p.uid, petId = p.petId, acquiredAt = p.acquiredAt })
+	end
+	return out
+end
+
+-- 返回已装备 uid 列表的拷贝。
+function PlayerDataService.GetEquippedPets(player)
+	local data = dataByPlayer[player]
+	if not data then
+		return {}
+	end
+	local out = {}
+	for _, uid in ipairs(data.EquippedPets) do
+		table.insert(out, uid)
+	end
+	return out
+end
+
+-- 把已装备 uid 解析为对应的宠物条目拷贝（跳过无主 uid 并告警）。供 PetService 生成宠物。
+function PlayerDataService.GetEquippedPetEntries(player)
+	local data = dataByPlayer[player]
+	if not data then
+		return {}
+	end
+	local byUid = {}
+	for _, p in ipairs(data.Inventory.Pets) do
+		byUid[p.uid] = p
+	end
+	local out = {}
+	for _, uid in ipairs(data.EquippedPets) do
+		local entry = byUid[uid]
+		if entry then
+			table.insert(out, { uid = entry.uid, petId = entry.petId, acquiredAt = entry.acquiredAt })
+		else
+			warn(string.format("[PlayerDataService] 装备 uid '%s' 无对应宠物，已忽略", tostring(uid)))
+		end
+	end
+	return out
+end
+
+-- 授予一只宠物，生成可读且唯一的 uid（petId_n）。返回 uid（失败返回 nil）。
+function PlayerDataService.GrantPet(player, petId)
+	local data = dataByPlayer[player]
+	if not data or type(petId) ~= "string" or petId == "" then
+		return nil
+	end
+
+	local pets = data.Inventory.Pets
+	local existing = {}
+	local sameTypeCount = 0
+	for _, p in ipairs(pets) do
+		existing[p.uid] = true
+		if p.petId == petId then
+			sameTypeCount += 1
+		end
+	end
+
+	local n = sameTypeCount + 1
+	local uid = petId .. "_" .. tostring(n)
+	while existing[uid] do
+		n += 1
+		uid = petId .. "_" .. tostring(n)
+	end
+
+	table.insert(pets, { uid = uid, petId = petId, acquiredAt = os.time() })
+	return uid
+end
+
+-- 装备指定 uid（单槽：替换为该 uid）。仅当玩家拥有该 uid 才生效。返回是否成功。
+function PlayerDataService.EquipPet(player, uid)
+	local data = dataByPlayer[player]
+	if not data or type(uid) ~= "string" then
+		return false
+	end
+	local owns = false
+	for _, p in ipairs(data.Inventory.Pets) do
+		if p.uid == uid then
+			owns = true
+			break
+		end
+	end
+	if not owns then
+		warn(string.format("[PlayerDataService] EquipPet 失败：未拥有 uid '%s'", uid))
+		return false
+	end
+	data.EquippedPets = { uid }
+	return true
+end
+
+-- 保证玩家拥有并装备了起始宠物：
+--   * 一只都没有 → 授予并装备起始宠物（不重复授予）。
+--   * 有宠物但无有效装备 → 装备已拥有的第一只（兜底，并告警）。
+function PlayerDataService.EnsureStarterPet(player, starterPetId)
+	local data = dataByPlayer[player]
+	if not data then
+		return
+	end
+	starterPetId = (type(starterPetId) == "string" and starterPetId ~= "") and starterPetId or "starter_toast"
+
+	-- 无任何宠物 → 授予并装备起始宠物
+	if #data.Inventory.Pets == 0 then
+		local uid = PlayerDataService.GrantPet(player, starterPetId)
+		if uid then
+			PlayerDataService.EquipPet(player, uid)
+		end
+		return
+	end
+
+	-- 有宠物但无有效装备 → 装备第一只
+	local owned = {}
+	for _, p in ipairs(data.Inventory.Pets) do
+		owned[p.uid] = true
+	end
+	local hasValidEquipped = false
+	for _, uid in ipairs(data.EquippedPets) do
+		if owned[uid] then
+			hasValidEquipped = true
+			break
+		end
+	end
+	if not hasValidEquipped then
+		warn("[PlayerDataService] 无有效装备宠物，自动装备已拥有的第一只")
+		PlayerDataService.EquipPet(player, data.Inventory.Pets[1].uid)
+	end
 end
 
 -- 在保存之后调用：清理内存数据与会话标记。
