@@ -58,6 +58,16 @@ Phase 8 调平：LagBlob 24 HP ÷ 15 ≈ 2 击、约 1.5s 内可击杀，敌人 
 - 发奖励后 `pushData(player)` 刷新客户端金币/等级/经验（MainUI 既有 UI，无需改动）。
 - **每个敌人只奖励一次**：`alive` 一次性置 false，死亡后不再可被伤害/结算。
 
+### Phase 8.5：奖励反馈（reward feedback）
+
+击杀后 `ServerInit` 复用**既有**奖励反馈通道把 `GiveReward` 的结果回推：
+`taskRemote:FireClient(player, "Reward", reward)`。MainUI 早已监听该 `"Reward"` 事件并显示
+`"+N Coins, +M XP!"`（如 `+15 Coins, +0 XP!`）。
+
+- **未改动 MainUI**、**未新增 remote**：纯复用既有客户端反馈路径。
+- 服务端仍是唯一真相：客户端只是显示，不参与奖励决策。
+- 因战斗仅发金币（XP=0），反馈会显示 `+0 XP`（轻微外观项，见"已知限制"）。
+
 ## 网络
 
 - 敌人/宠物均为服务端 **Anchored Part**，自动复制到客户端 —— **本阶段未新增任何 RemoteEvent/RemoteFunction**。
@@ -86,6 +96,8 @@ Phase 7 宠物 UI / 装备流程行为保持不变（仅新增只读 `PetService
 - 宠物跟随玩家；若玩家远离基地路径，宠物可能够不到敌人 → 敌人逃逸。MVP 设计为"在基地附近防守"。
 - 宠物同时仍会攻击训练假人（Phase 5/7）与敌人（Phase 8），二者独立冷却，互不影响。
 - 刷怪为固定节奏，无难度曲线。
+- 奖励反馈复用既有 `"+N Coins, +M XP!"` 文案；战斗仅发金币时会显示 `+0 XP`（为避免改 MainUI 而接受的轻微外观项）。
+- Phase 8.5：`PetService` 的"无已装备宠物，跳过生成"日志默认静默（`DEBUG_LOG=false`），仅调试时打印；行为不变。
 
 ## 未来扩展点
 

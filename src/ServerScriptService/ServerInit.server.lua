@@ -178,8 +178,14 @@ local function onEnemyKilled(player, enemy)
 		return
 	end
 	-- 复用 RewardService.GiveReward(player, task)：task 只需带 rewardCoins/rewardXP 字段。
-	RewardService.GiveReward(player, { rewardCoins = enemy.reward or 0, rewardXP = 0 })
+	local reward = RewardService.GiveReward(player, { rewardCoins = enemy.reward or 0, rewardXP = 0 })
 	pushData(player) -- 刷新 MainUI 的金币/等级/经验
+
+	-- Phase 8.5：奖励反馈。复用既有奖励反馈通道 —— MainUI 已监听 taskRemote "Reward" 并显示
+	-- "+N Coins, +M XP!"。因此无需改 MainUI、无需新增 remote，服务端仍是唯一真相。
+	if reward then
+		taskRemote:FireClient(player, "Reward", reward)
+	end
 end
 
 EnemyService.Start() -- 敌人移动/清理循环
