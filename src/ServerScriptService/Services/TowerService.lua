@@ -22,6 +22,8 @@ local TowerService = {}
 local MIN_DISTANCE_FROM_PATH = 8 -- 塔到任一路径航点的最小水平距离
 local MIN_DISTANCE_BETWEEN_TOWERS = 8 -- 塔与塔之间的最小水平距离
 local GROUND_DROP = 3 -- HRP 到脚下地面的近似高度（用于把塔放到地面）
+local MAX_PLACE_DISTANCE = 60 -- Phase 11.5：放置点距玩家的最大水平距离（防跨地图放置）
+local VERTICAL_BAND = 30 -- Phase 11.5：放置点 Y 相对玩家的允许范围（防离谱高度）
 local TOWERS_FOLDER_NAME = "Towers"
 
 -- 内置兜底塔定义（TowerConfig 缺失时使用）。
@@ -131,9 +133,12 @@ end
 
 -- ---------- 公开 API ----------
 
--- 尝试为玩家在其角色位置放置一座塔。完全 server-authoritative。
+-- 尝试为玩家放置一座塔。完全 server-authoritative。
+-- requestedPosition（可选，Vector3）：客户端鬼影预览的地面落点；为空则回退到玩家脚下。
+--   服务端始终对该位置做完整校验（不信任客户端）：距玩家不太远、竖直在合理范围、
+--   金币足够、距路径/距塔不太近。
 -- 返回结果对象：{ success = bool, reason = string, cost = number? }
-function TowerService.TryPlaceTower(player)
+function TowerService.TryPlaceTower(player, requestedPosition)
 	local data = PlayerDataService.GetData(player)
 	if not data then
 		return { success = false, reason = "no_data" }
@@ -149,21 +154,34 @@ function TowerService.TryPlaceTower(player)
 	local cost = (type(def.cost) == "number" and def.cost >= 0) and def.cost or FALLBACK_TOWER.cost
 	local size = (typeof(def.size) == "Vector3") and def.size or FALLBACK_TOWER.size
 
-	-- 1) 金币足够？
+	-- 决定地面参考点：优先用客户端请求位置，否则回退玩家脚下（向后兼容）。
+	local groundPoint
+	if typeof(requestedPosition) == "Vector3" then
+		groundPoint = requestedPosition
+	else
+		groundPoint = Vector3.new(hrp.Position.X, hrp.Position.Y - GROUND_DROP, hrp.Position.Z)
+	end
+
+	-- 反作弊 1：放置点距玩家不能太远（防跨地图放置）。
+	if horizontalDistance(groundPoint, hrp.Position) > MAX_PLACE_DISTANCE then
+		return { success = false, reason = "too_far", cost = cost }
+	end
+	-- 反作弊 2：竖直方向限制（防离谱高度的飘塔）。
+	local boundedY = math.clamp(groundPoint.Y, hrp.Position.Y - VERTICAL_BAND, hrp.Position.Y + VERTICAL_BAND)
+
+	-- 金币足够？
 	if (data.Coins or 0) < cost then
 		return { success = false, reason = "not_enough_coins", cost = cost }
 	end
 
-	-- 2) 计算放置位置（塔底落在角色脚下地面）
-	local groundY = hrp.Position.Y - GROUND_DROP
-	local position = Vector3.new(hrp.Position.X, groundY + size.Y / 2, hrp.Position.Z)
+	-- 最终塔中心（塔底落在地面参考点）。
+	local position = Vector3.new(groundPoint.X, boundedY + size.Y / 2, groundPoint.Z)
 
-	-- 3) 距路径不太近？
+	-- 距路径不太近？
 	if tooCloseToPath(position) then
 		return { success = false, reason = "too_close_to_path", cost = cost }
 	end
-
-	-- 4) 距其它塔不太近？
+	-- 距其它塔不太近？
 	if tooCloseToTower(position) then
 		return { success = false, reason = "too_close_to_tower", cost = cost }
 	end
