@@ -15,13 +15,17 @@ local Players = game:GetService("Players")
 local PlayerDataService = {}
 
 -- ---------- 常量 ----------
-local CURRENT_DATA_VERSION = 2 -- Phase 6：新增宠物库存/装备
+local CURRENT_DATA_VERSION = 3 -- Phase 15：新增玩家进度技能点（SkillPoints）+ 渐进 XP 曲线
 -- 注意：DataStore 名称保持 "PlayerData_v1" 不变，避免孤立 Phase 4/5 存档。
 -- schema 迁移通过记录内的 DataVersion 完成，而非更换 DataStore。
 local DATASTORE_NAME = "PlayerData_v1"
 local MAX_RETRIES = 3
 local RETRY_DELAY = 2 -- 秒
-local XP_PER_LEVEL = 100 -- 每级所需经验（XP 表示当前等级内进度 0 ~ XP_PER_LEVEL-1）
+-- XP 曲线（Phase 15）：升到下一级所需经验随等级递增 = floor(100 * level^1.35)。
+--   XP 字段表示"当前等级内进度"（0 ~ GetXPRequiredForLevel(Level)-1）；
+--   满则升级、扣阈值、+1 技能点、溢出结转。指数 >1 使后期升级更慢，为未来大型技能树节流产出。
+local XP_CURVE_BASE = 100 -- 基础系数
+local XP_CURVE_EXPONENT = 1.35 -- 指数（>1 → 越高越难）
 local AUTO_SAVE_INTERVAL_SECONDS = 180 -- 周期自动保存间隔（安全网）
 local AUTO_SAVE_STAGGER_SECONDS = 0.1 -- 同批玩家之间的轻微错峰，避免同帧批量 SetAsync
 
@@ -44,6 +48,15 @@ local function deepCopy(source)
 	return out
 end
 
+-- 升级所需经验（Phase 15，集中式公式）。level = 当前等级，返回从该级升到下一级所需 XP。
+-- 公式：floor(XP_CURVE_BASE * level^XP_CURVE_EXPONENT)。随等级递增（L1→2:100, L5→6:~877, L10→11:~2238…）。
+local function getXPRequiredForLevel(level)
+	level = (type(level) == "number" and level >= 1) and math.floor(level) or 1
+	return math.floor(XP_CURVE_BASE * (level ^ XP_CURVE_EXPONENT))
+end
+-- 暴露给上层/测试（集中式，单一真相）。
+PlayerDataService.GetXPRequiredForLevel = getXPRequiredForLevel
+
 -- 默认数据（每次调用都生成全新的表，玩家之间互不共享引用）。
 local function defaultData()
 	return {
@@ -51,6 +64,7 @@ local function defaultData()
 		Coins = 0,
 		Level = 1,
 		XP = 0,
+		SkillPoints = 0, -- Phase 15：升级累计的技能点（暂不可消费）
 		CompletedTasks = {}, -- [taskId] = 完成次数
 		Inventory = {
 			Pets = {}, -- 数组：{ uid, petId, acquiredAt }
@@ -123,7 +137,9 @@ local function reconcile(loaded)
 			tostring(version),
 			CURRENT_DATA_VERSION
 		))
-		-- 目前仅 v1：reconcile 本身即迁移。未来新增版本时在此分支处理字段变化。
+		-- reconcile 本身即迁移：保留所有已知旧字段，缺失的新字段补默认值。
+		-- v1→v2 补齐 Inventory.Pets / EquippedPets；v2→v3 补齐 SkillPoints（默认 0）。
+		-- 不丢弃任何现有数据（金币/宠物/装备/任务/经验等级均保留）。
 	end
 
 	if type(loaded.Coins) == "number" then
@@ -134,6 +150,10 @@ local function reconcile(loaded)
 	end
 	if type(loaded.XP) == "number" then
 		data.XP = math.max(0, math.floor(loaded.XP))
+	end
+	-- Phase 15（v2→v3 迁移）：缺失则保留默认 0；存在则规范化为非负整数。
+	if type(loaded.SkillPoints) == "number" then
+		data.SkillPoints = math.max(0, math.floor(loaded.SkillPoints))
 	end
 
 	if type(loaded.CompletedTasks) == "table" then
@@ -308,18 +328,28 @@ function PlayerDataService.AddCoins(player, amount)
 	return data
 end
 
--- 增加经验并处理升级，返回更新后的数据表。
+-- 增加经验并处理升级（Phase 15）。返回 (data, levelsGained)。
+--   * 渐进阈值 getXPRequiredForLevel(Level)；一次奖励可跨多级。
+--   * 每升一级 +1 技能点（SkillPoints）。XP 溢出结转到下一级（保留余数）。
+--   * 升级仅在服务端发生（本函数只由服务端逻辑调用）。
 function PlayerDataService.AddXP(player, amount)
 	local data = dataByPlayer[player]
 	if not data then
-		return nil
+		return nil, 0
 	end
+	amount = (type(amount) == "number" and amount > 0) and math.floor(amount) or 0
 	data.XP += amount
-	while data.XP >= XP_PER_LEVEL do
-		data.XP -= XP_PER_LEVEL
+
+	local levelsGained = 0
+	while data.XP >= getXPRequiredForLevel(data.Level) do
+		data.XP -= getXPRequiredForLevel(data.Level)
 		data.Level += 1
+		levelsGained += 1
 	end
-	return data
+	if levelsGained > 0 then
+		data.SkillPoints += levelsGained
+	end
+	return data, levelsGained
 end
 
 -- 返回可安全发送给客户端的精简数据（不含 Inventory/Settings 等字段）。
@@ -332,7 +362,8 @@ function PlayerDataService.GetPublicData(player)
 		Coins = data.Coins,
 		Level = data.Level,
 		XP = data.XP,
-		XpForNextLevel = XP_PER_LEVEL,
+		XpForNextLevel = getXPRequiredForLevel(data.Level), -- Phase 15：随等级变化
+		SkillPoints = data.SkillPoints, -- Phase 15
 	}
 end
 

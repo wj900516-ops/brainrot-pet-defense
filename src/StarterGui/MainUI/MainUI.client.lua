@@ -139,6 +139,7 @@ end
 local coinsLabel = makeStatRow("Coins", "Coins", "--")
 local levelLabel = makeStatRow("Level", "Level", "--")
 local xpLabel = makeStatRow("XP", "XP", "-- / --")
+local skillPointsLabel = makeStatRow("SkillPoints", "Skill Points", "--") -- Phase 15
 local taskTitleLabel = makeLabel("TaskTitleLabel", "Current Task: --", 42, 16)
 local taskProgLabel = makeLabel("TaskProgressLabel", "Progress: --", 24, 15, Color3.fromRGB(205, 211, 230))
 
@@ -190,6 +191,7 @@ local function updateData(data)
 	coinsLabel.Text = string.format("%d", data.Coins or 0)
 	levelLabel.Text = string.format("%d", data.Level or 1)
 	xpLabel.Text = string.format("%d / %d", data.XP or 0, data.XpForNextLevel or 100)
+	skillPointsLabel.Text = string.format("%d", data.SkillPoints or 0) -- Phase 15
 end
 
 local function updateTask(taskData)
@@ -207,7 +209,12 @@ local function showReward(reward)
 	if not reward then
 		return
 	end
-	feedbackLabel.Text = string.format("+%d Coins, +%d XP!", reward.coinsAdded or 0, reward.xpAdded or 0)
+	local text = string.format("+%d Coins, +%d XP!", reward.coinsAdded or 0, reward.xpAdded or 0)
+	if reward.leveledUp then
+		local sp = reward.skillPointsAdded or 1
+		text = text .. string.format("  Level Up! +%d Skill Point%s", sp, sp > 1 and "s" or "")
+	end
+	feedbackLabel.Text = text
 	feedbackLabel.TextTransparency = 1
 	feedbackScale.Scale = 0.95
 	feedbackToken += 1

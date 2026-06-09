@@ -41,6 +41,7 @@ local FALLBACK_ENEMY = {
 	health = 50,
 	speed = 8,
 	killReward = 10,
+	xpReward = 5,
 }
 
 -- ---------- 加载 EnemyConfig（容错，绝不无限 yield） ----------
@@ -68,6 +69,7 @@ local function resolveDef(enemyId)
 	local maxHp = (type(def.health) == "number" and def.health > 0) and def.health or FALLBACK_ENEMY.health
 	local speed = (type(def.speed) == "number" and def.speed > 0) and def.speed or FALLBACK_ENEMY.speed
 	local reward = (type(def.killReward) == "number" and def.killReward >= 0) and def.killReward or FALLBACK_ENEMY.killReward
+	local xpReward = (type(def.xpReward) == "number" and def.xpReward >= 0) and def.xpReward or (FALLBACK_ENEMY.xpReward or 0)
 	local displayName = (type(def.displayName) == "string" and def.displayName ~= "") and def.displayName or enemyId
 	local size = (typeof(def.size) == "Vector3") and def.size or ENEMY_SIZE
 	local color = (typeof(def.color) == "Color3") and def.color or COLOR_ALIVE
@@ -76,6 +78,7 @@ local function resolveDef(enemyId)
 		maxHp = math.floor(maxHp),
 		speed = speed,
 		reward = math.floor(reward),
+		xpReward = math.floor(xpReward),
 		displayName = displayName,
 		size = size,
 		color = color,
@@ -250,6 +253,8 @@ function EnemyService.SpawnEnemy(enemyId, options)
 	local maxHp = math.max(1, math.floor(def.maxHp * hpMult))
 	local speed = def.speed * speedMult
 	local reward = math.max(0, math.floor(def.reward * rewardMult))
+	-- Phase 15：XP 奖励复用同一 rewardMult（普通怪 mult=1 → 基础值；Boss mult=5+tier → 随梯队放大）。
+	local xpReward = math.max(0, math.floor(def.xpReward * rewardMult))
 
 	local r = resolveRoute()
 
@@ -262,6 +267,7 @@ function EnemyService.SpawnEnemy(enemyId, options)
 		maxHp = maxHp,
 		speed = speed,
 		reward = reward,
+		xpReward = xpReward,
 		size = def.size,
 		color = def.color,
 		isBoss = isBoss,
