@@ -76,6 +76,16 @@ local function ensureFolder()
 	return folder
 end
 
+-- 有限实数校验：拒绝 NaN（n ~= n）与 ±Inf。
+local function isFiniteNumber(n)
+	return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
+end
+
+-- 有限 Vector3 校验：必须是 Vector3 且 X/Y/Z 全为有限实数。
+local function isFiniteVector3(v)
+	return typeof(v) == "Vector3" and isFiniteNumber(v.X) and isFiniteNumber(v.Y) and isFiniteNumber(v.Z)
+end
+
 -- 水平（忽略 Y）距离，便于地面高度不一致时稳健判定。
 local function horizontalDistance(a, b)
 	return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
@@ -154,9 +164,15 @@ function TowerService.TryPlaceTower(player, requestedPosition)
 	local cost = (type(def.cost) == "number" and def.cost >= 0) and def.cost or FALLBACK_TOWER.cost
 	local size = (typeof(def.size) == "Vector3") and def.size or FALLBACK_TOWER.size
 
-	-- 决定地面参考点：优先用客户端请求位置，否则回退玩家脚下（向后兼容）。
+	-- 校验客户端位置（若提供）：必须是有限的 Vector3（拒绝 NaN / ±Inf / 非 Vector3）。
+	-- 该校验先于任何距离/路径/金币/放置判定。
+	if requestedPosition ~= nil and not isFiniteVector3(requestedPosition) then
+		return { success = false, reason = "bad_position" }
+	end
+
+	-- 决定地面参考点：提供了合法位置则用之，否则回退玩家脚下（向后兼容）。
 	local groundPoint
-	if typeof(requestedPosition) == "Vector3" then
+	if isFiniteVector3(requestedPosition) then
 		groundPoint = requestedPosition
 	else
 		groundPoint = Vector3.new(hrp.Position.X, hrp.Position.Y - GROUND_DROP, hrp.Position.Z)
@@ -166,8 +182,14 @@ function TowerService.TryPlaceTower(player, requestedPosition)
 	if horizontalDistance(groundPoint, hrp.Position) > MAX_PLACE_DISTANCE then
 		return { success = false, reason = "too_far", cost = cost }
 	end
-	-- 反作弊 2：竖直方向限制（防离谱高度的飘塔）。
-	local boundedY = math.clamp(groundPoint.Y, hrp.Position.Y - VERTICAL_BAND, hrp.Position.Y + VERTICAL_BAND)
+
+	-- 反作弊 2：竖直方向限制 —— 超出允许带宽直接【拒绝】（不夹紧、不强行放置）。
+	if groundPoint.Y > hrp.Position.Y + VERTICAL_BAND then
+		return { success = false, reason = "too_high", cost = cost }
+	end
+	if groundPoint.Y < hrp.Position.Y - VERTICAL_BAND then
+		return { success = false, reason = "too_low", cost = cost }
+	end
 
 	-- 金币足够？
 	if (data.Coins or 0) < cost then
@@ -175,7 +197,7 @@ function TowerService.TryPlaceTower(player, requestedPosition)
 	end
 
 	-- 最终塔中心（塔底落在地面参考点）。
-	local position = Vector3.new(groundPoint.X, boundedY + size.Y / 2, groundPoint.Z)
+	local position = Vector3.new(groundPoint.X, groundPoint.Y + size.Y / 2, groundPoint.Z)
 
 	-- 距路径不太近？
 	if tooCloseToPath(position) then

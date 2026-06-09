@@ -102,6 +102,9 @@ local REASON_TEXT = {
 	too_close_to_path = "Too close to the path",
 	too_close_to_tower = "Too close to another tower",
 	too_far = "Too far away",
+	too_high = "Placement too high",
+	too_low = "Placement too low",
+	bad_position = "Invalid placement position",
 	no_character = "Cannot place right now",
 	no_data = "Cannot place right now",
 }

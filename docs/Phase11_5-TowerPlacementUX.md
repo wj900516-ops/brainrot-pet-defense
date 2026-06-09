@@ -26,18 +26,26 @@ Esc / 右键 → 取消放置模式
 
 ## 服务端（TowerService.TryPlaceTower(player, requestedPosition)）
 
-复用 Phase 11 校验，并新增反作弊：
+复用 Phase 11 校验，并新增反作弊（顺序即校验顺序）：
 
 1. 有数据 / 有角色 + HRP。
-2. **地面落点**：优先用客户端 `requestedPosition`（Vector3）；为空回退玩家脚下（向后兼容）。
+2. **有限性校验（先于一切距离/路径/金币/放置判定）**：若提供了 `requestedPosition`，
+   它必须是**有限的 Vector3** —— 拒绝**非 Vector3、NaN（`n ~= n`）、±Inf**。否则 `bad_position`。
+   （为空则回退玩家脚下，向后兼容。）
 3. **反作弊**：落点距玩家水平距离 ≤ `MAX_PLACE_DISTANCE (60)`（否则 `too_far`）。
-4. **反作弊**：落点 Y 夹到 `[玩家Y - VERTICAL_BAND, 玩家Y + VERTICAL_BAND]`（`VERTICAL_BAND = 30`，防飘塔）。
+4. **反作弊（拒绝，不夹紧）**：落点 Y 必须在 `[玩家Y - VERTICAL_BAND, 玩家Y + VERTICAL_BAND]`
+   （`VERTICAL_BAND = 30`）内；**超出直接拒绝**：高于上界 → `too_high`，低于下界 → `too_low`。
+   不再 clamp 后强行放置。
 5. 金币 ≥ cost（否则 `not_enough_coins`，不扣币）。
 6. 距路径 ≥ 8（否则 `too_close_to_path`）。
 7. 距其它塔 ≥ 8（否则 `too_close_to_tower`）。
-8. 全过 → **先扣币** → 建塔。任一失败 → 安全拒绝、不扣币。
+8. 全过 → **先扣币** → 建塔（恰好一座）。任一失败 → 安全拒绝、**不扣币**、不建塔。
 
-**服务端始终不信任客户端位置**：客户端发来的落点只是意图，所有判定在服务端重做。
+**服务端始终不信任客户端位置**：客户端发来的落点只是意图，所有判定在服务端重做；
+**畸形/非有限位置一律拒绝**，**越界竖直位置一律拒绝（不夹紧）**。
+
+失败 `reason` 取值：`bad_position` / `too_far` / `too_high` / `too_low` /
+`not_enough_coins` / `too_close_to_path` / `too_close_to_tower` / `no_character` / `no_data`。
 
 ## 网络
 
@@ -60,5 +68,5 @@ Esc / 右键 → 取消放置模式
 
 - 客户端校验为近似，可能与服务端略有出入（例如路径用"节点距离"而非"线段距离"）；以服务端结果为准。
 - 地面落点依赖鼠标射线；指向天空/无命中时鬼影隐藏，确认无效。
-- 服务端竖直方向用夹紧（clamp）而非地面射线；不同地形可能略有高低偏差。
+- 服务端竖直方向为"越界即拒绝"（非地面射线）；不同地形可能略有高低偏差，但落点 Y 必须在玩家附近带宽内。
 - 右键取消同时可能触发相机右键行为（MVP 可接受）。
