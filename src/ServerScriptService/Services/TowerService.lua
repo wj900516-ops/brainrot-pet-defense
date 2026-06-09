@@ -1,6 +1,6 @@
 -- TowerService (ModuleScript)
 -- 放在 ServerScriptService > Services > TowerService
--- Phase 11：塔放置（server-authoritative）。仅放置，不含战斗（Phase 12）。
+-- Phase 11：塔放置（server-authoritative）。Phase 12：塔自动攻击范围内最近敌人。
 --
 -- 设计：客户端只发"放置意图"（不带位置）；服务端读取玩家角色位置并校验后放置。
 --   → 客户端无法伪造位置 / 花费 / 拥有者 / 伤害；不能免费造塔。
@@ -12,6 +12,7 @@
 local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local PlayerDataService = require(script.Parent.PlayerDataService)
 local EnemyService = require(script.Parent.EnemyService)
@@ -239,7 +240,19 @@ function TowerService.TryPlaceTower(player, requestedPosition)
 	-- 通过 → 扣币 + 建塔（顺序：先扣币，再建塔）
 	PlayerDataService.AddCoins(player, -cost)
 	local model = buildTowerModel(def, position)
-	table.insert(towers, { model = model, position = position, ownerUserId = player.UserId })
+	-- 记录战斗参数（Phase 12）；缺失则缺省。
+	local range = (type(def.range) == "number" and def.range > 0) and def.range or 24
+	local damage = (type(def.damage) == "number" and def.damage > 0) and def.damage or 8
+	local attackInterval = (type(def.attackInterval) == "number" and def.attackInterval > 0) and def.attackInterval or 1.0
+	table.insert(towers, {
+		model = model,
+		position = position,
+		ownerUserId = player.UserId,
+		range = range,
+		damage = damage,
+		attackInterval = attackInterval,
+		lastAttack = 0,
+	})
 
 	return { success = true, reason = "placed", cost = cost }
 end
@@ -256,14 +269,83 @@ local function clearPlayerTowers(player)
 	end
 end
 
--- 启动（幂等）：建塔文件夹 + 玩家离开清理。
-function TowerService.Start()
+-- ---------- Phase 12：塔攻击 ----------
+
+-- 寻找塔范围内最近的存活敌人（水平距离）。
+local function nearestEnemyInRange(position, range)
+	local nearest, nearestDist
+	for _, enemy in ipairs(EnemyService.GetAliveEnemies()) do
+		if enemy.model and enemy.model.Parent then
+			local dist = horizontalDistance(enemy.model.Position, position)
+			if dist <= range and (not nearestDist or dist < nearestDist) then
+				nearest = enemy
+				nearestDist = dist
+			end
+		end
+	end
+	return nearest
+end
+
+-- 极简攻击反馈：从塔到目标短暂显示一条光束（0.08s 后销毁）。无投射物系统。
+local function flashBeam(fromPos, toPos)
+	local delta = toPos - fromPos
+	local dist = delta.Magnitude
+	if dist < 0.1 then
+		return
+	end
+	local beam = Instance.new("Part")
+	beam.Name = "TowerBeam"
+	beam.Anchored = true
+	beam.CanCollide = false
+	beam.CanQuery = false
+	beam.Material = Enum.Material.Neon
+	beam.Color = Color3.fromRGB(130, 170, 255)
+	beam.Size = Vector3.new(0.25, 0.25, dist)
+	beam.CFrame = CFrame.lookAt((fromPos + toPos) / 2, toPos)
+	beam.Parent = Workspace
+	task.delay(0.08, function()
+		beam:Destroy()
+	end)
+end
+
+local onEnemyKilled = nil
+
+-- 启动（幂等）：建塔文件夹 + 玩家离开清理 + 单个 Heartbeat 驱动所有塔的攻击。
+-- options.onEnemyKilled(ownerPlayer, enemy) 可选：塔击杀时复用既有奖励通道。
+function TowerService.Start(options)
 	if started then
 		return
 	end
 	started = true
+	onEnemyKilled = options and options.onEnemyKilled
 	ensureFolder()
 	Players.PlayerRemoving:Connect(clearPlayerTowers)
+
+	-- 单个共享 Heartbeat 驱动所有塔（无每塔循环 → 塔/玩家移除后不残留攻击循环）。
+	RunService.Heartbeat:Connect(function()
+		local now = os.clock()
+		for _, tower in ipairs(towers) do
+			if tower.model and tower.model.Parent then
+				local interval = tower.attackInterval or 1.0
+				if (now - (tower.lastAttack or 0)) >= interval then
+					local target = nearestEnemyInRange(tower.position, tower.range or 24)
+					if target then
+						tower.lastAttack = now
+						flashBeam(tower.model.Position, target.model.Position)
+						-- DamageEnemy 的 alive 一次性守卫保证击杀只结算一次：
+						-- 若宠物/另一座塔已击杀同一敌人，这里 DamageEnemy 返回 false，不重复发奖。
+						local killed = EnemyService.DamageEnemy(target, tower.damage or 8)
+						if killed and onEnemyKilled then
+							local owner = Players:GetPlayerByUserId(tower.ownerUserId)
+							if owner then
+								onEnemyKilled(owner, target)
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
 end
 
 return TowerService
