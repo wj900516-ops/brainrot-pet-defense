@@ -34,6 +34,17 @@ local playerDataRemote = Net.PlayerDataRemote()
 local taskRemote = Net.TaskRemote()
 local petRemote = Net.PetRemote()
 local towerRemote = Net.TowerRemote()
+local restartRemote = Net.RestartRemote()
+
+-- Phase 13：向客户端推送会话是否失败（用于显示/隐藏"按 R 重开"提示）。
+local function pushSessionState(player)
+	local payload = { failed = WaveService.IsFailed() }
+	if player then
+		restartRemote:FireClient(player, "SessionState", payload)
+	else
+		restartRemote:FireAllClients("SessionState", payload)
+	end
+end
 
 -- ---------- 向客户端推送 ----------
 local function pushData(player)
@@ -103,6 +114,9 @@ local function onPlayerAdded(player)
 
 	-- Phase 7：主动推送一次公开宠物列表（Pet UI 打开时也会再 RequestPets）。
 	pushPets(player)
+
+	-- Phase 13：推送当前会话状态（若已失败，客户端显示"按 R 重开"）。
+	pushSessionState(player)
 end
 
 local function onPlayerRemoving(player)
@@ -193,7 +207,12 @@ end
 -- Phase 9：敌人逃逸（到达基地）→ WaveService 扣基地血量（逃逸不发奖励）。
 EnemyService.Start({ onEscaped = WaveService.OnEnemyEscaped }) -- 敌人移动/清理 + 逃逸回调
 CombatService.Start({ onEnemyKilled = onEnemyKilled }) -- 宠物→敌人战斗（击杀奖励，未改动）
-WaveService.Start() -- 波次进程 + 基地血量 + 失败条件
+-- Phase 9/13：波次 + 基地血量 + 失败条件；失败时通知客户端可重开。
+WaveService.Start({
+	onSessionFailed = function()
+		pushSessionState() -- 广播：已失败 → 客户端显示"按 R 重开"
+	end,
+})
 -- Phase 11/12：塔放置 + 塔攻击。击杀复用同一 onEnemyKilled 奖励通道；
 -- DamageEnemy 的 alive 一次性守卫保证宠物/塔击杀同一敌人不重复发奖。
 TowerService.Start({ onEnemyKilled = onEnemyKilled })
@@ -209,6 +228,24 @@ towerRemote.OnServerEvent:Connect(function(player, action, position)
 			pushData(player) -- 扣币后刷新 MainUI 金币
 		end
 		towerRemote:FireClient(player, "Result", result) -- 回推结果给客户端反馈
+	end
+	-- 未知 action：安全忽略。
+end)
+
+-- ---------- Phase 13：会话重开（服务端权威） ----------
+-- 客户端只发 "Restart" 意图；仅在会话失败后允许。服务端清敌人/塔、重置基地/波次、重启刷怪。
+-- 客户端不能直接设置波次/基地血量/金币/敌人状态。
+restartRemote.OnServerEvent:Connect(function(player, action)
+	if action == "Restart" then
+		if not WaveService.IsFailed() then
+			-- 运行中不允许重开（MVP）。
+			restartRemote:FireClient(player, "Result", { success = false, reason = "run_active" })
+			return
+		end
+		TowerService.ClearAll() -- 清所有塔（清后攻击循环不再遍历到它们）
+		local ok = WaveService.ResetSession() -- 清敌人 + 重置基地/波次 + 重启刷怪
+		pushSessionState() -- 广播最新会话状态（已不再失败）
+		restartRemote:FireClient(player, "Result", { success = ok == true, reason = ok and "restarted" or "failed" })
 	end
 	-- 未知 action：安全忽略。
 end)
@@ -282,4 +319,4 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 12 tower attack online.")
+print("[ServerInit] Ready. Phase 13 run restart online.")

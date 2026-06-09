@@ -7,6 +7,7 @@
 --   * 每波生成固定数量的 LagBlob；本波全部解决（击杀或逃逸）后，延迟开始下一波。
 --   * 敌人逃逸（到达基地）→ 基地血量 -1（由 EnemyService.onEscaped 调用 OnEnemyEscaped）。
 --   * 基地血量归 0 → 会话失败：停止刷怪、清理残余敌人。
+--   * Phase 13：失败后可重开会话（ResetSession：清敌人 + 重置基地/波次 + 重启刷怪，代号防重复循环）。
 --   * 在世界中用一块"基地状态板"（BillboardGui）显示 Wave / Base HP / 失败状态，供 QA 可见。
 --     —— 这是服务端创建的世界对象（自动复制），【不改 MainUI】、不新增 remote。
 --
@@ -32,6 +33,8 @@ local baseHp = BASE_MAX_HP
 local sessionFailed = false
 local started = false
 local statusLabel = nil
+local generation = 0 -- 波次循环代号：每次启动 +1；旧循环检测到代号变化即退出（保证不重复循环）
+local onSessionFailed = nil -- 会话失败时回调一次（供 ServerInit 推送客户端"可重开"状态）
 
 -- ---------- 基地状态板（世界 Billboard，非 MainUI） ----------
 local function buildStatusBoard()
@@ -106,6 +109,9 @@ function WaveService.OnEnemyEscaped(_enemy)
 		warn(string.format("[WaveService] 基地被摧毁，会话失败（到达第 %d 波）", waveNumber))
 		updateStatus()
 		EnemyService.ClearAll() -- 清理残余敌人
+		if onSessionFailed then
+			onSessionFailed() -- 通知 ServerInit（推送客户端"可重开"提示）
+		end
 	end
 end
 
@@ -120,46 +126,71 @@ function WaveService.IsFailed()
 	return sessionFailed
 end
 
--- 启动波次循环（幂等）。每波：生成 N 个 → 等待全部解决 → 延迟 → 下一波；失败则停止。
-function WaveService.Start()
+-- 波次循环（带代号）：每波生成 N → 等待全部解决 → 延迟 → 下一波。
+-- 任意一处发现 myGen ~= generation（已被新循环取代）或 sessionFailed，立即退出。
+local function runWaveLoop(myGen)
+	while myGen == generation and not sessionFailed do
+		waveNumber += 1
+		updateStatus()
+		print(string.format("[WaveService] 第 %d 波开始（%d 个敌人）", waveNumber, ENEMIES_PER_WAVE))
+
+		for _ = 1, ENEMIES_PER_WAVE do
+			if myGen ~= generation or sessionFailed then
+				break
+			end
+			EnemyService.SpawnEnemy(ENEMY_ID)
+			task.wait(SPAWN_STAGGER_SECONDS)
+		end
+
+		while myGen == generation and not sessionFailed and #EnemyService.GetAliveEnemies() > 0 do
+			task.wait(0.5)
+		end
+
+		if myGen ~= generation or sessionFailed then
+			break
+		end
+
+		print(string.format("[WaveService] 第 %d 波结束，%ds 后开始下一波", waveNumber, INTER_WAVE_DELAY_SECONDS))
+		task.wait(INTER_WAVE_DELAY_SECONDS)
+	end
+end
+
+-- 启动一个新的波次循环：代号 +1（旧循环若仍在，会因代号变化而退出），保证同一时刻仅一个循环。
+local function startWaveLoop()
+	generation += 1
+	local myGen = generation
+	task.spawn(function()
+		runWaveLoop(myGen)
+	end)
+end
+
+-- 启动（幂等）。options.onSessionFailed() 可选：会话失败时回调一次。
+function WaveService.Start(options)
 	if started then
 		return
 	end
 	started = true
+	onSessionFailed = options and options.onSessionFailed
 
 	buildStatusBoard()
 	updateStatus()
+	startWaveLoop()
+end
 
-	task.spawn(function()
-		while not sessionFailed do
-			waveNumber += 1
-			updateStatus()
-			print(string.format("[WaveService] 第 %d 波开始（%d 个敌人）", waveNumber, ENEMIES_PER_WAVE))
-
-			-- 生成本波敌人（轻微错峰，便于观察）。
-			for _ = 1, ENEMIES_PER_WAVE do
-				if sessionFailed then
-					break
-				end
-				EnemyService.SpawnEnemy(ENEMY_ID)
-				task.wait(SPAWN_STAGGER_SECONDS)
-			end
-
-			-- 等待本波全部解决（击杀或逃逸 → 无存活敌人），或会话失败。
-			while not sessionFailed and #EnemyService.GetAliveEnemies() > 0 do
-				task.wait(0.5)
-			end
-
-			if sessionFailed then
-				break
-			end
-
-			print(string.format("[WaveService] 第 %d 波结束，%ds 后开始下一波", waveNumber, INTER_WAVE_DELAY_SECONDS))
-			task.wait(INTER_WAVE_DELAY_SECONDS)
-		end
-
-		print(string.format("[WaveService] 会话失败，停止刷怪（到达第 %d 波）", waveNumber))
-	end)
+-- 重开会话（仅在失败后允许）：清残余敌人 + 重置 baseHp/waveNumber + 清失败 + 重启刷怪。
+-- 返回是否成功（运行中返回 false）。
+-- 注意：塔的清理由 ServerInit 编排（TowerService.ClearAll），保持 WaveService 不依赖 TowerService。
+function WaveService.ResetSession()
+	if not sessionFailed then
+		return false -- 运行中不允许重开
+	end
+	EnemyService.ClearAll() -- 清残余敌人（清后 alive=false，不再发奖/扣血）
+	baseHp = BASE_MAX_HP
+	waveNumber = 0
+	sessionFailed = false
+	updateStatus()
+	startWaveLoop() -- 重新开始（代号 +1）
+	return true
 end
 
 return WaveService
