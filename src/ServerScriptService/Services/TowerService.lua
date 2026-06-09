@@ -91,9 +91,37 @@ local function horizontalDistance(a, b)
 	return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
 end
 
+-- 点到线段（XZ 平面）的最近距离：把 point 投影到段 AB，t 夹到 [0,1]，返回到最近点的 XZ 距离。
+local function distancePointToSegmentXZ(point, a, b)
+	local px, pz = point.X, point.Z
+	local ax, az = a.X, a.Z
+	local bx, bz = b.X, b.Z
+	local dx, dz = bx - ax, bz - az
+	local segLenSq = dx * dx + dz * dz
+	local t
+	if segLenSq <= 1e-6 then
+		t = 0 -- A、B 几乎重合：退化为到 A 的距离
+	else
+		t = ((px - ax) * dx + (pz - az) * dz) / segLenSq
+		t = math.clamp(t, 0, 1)
+	end
+	local cx, cz = ax + t * dx, az + t * dz
+	local ex, ez = px - cx, pz - cz
+	return math.sqrt(ex * ex + ez * ez)
+end
+
+-- 校验"最终塔位"是否离敌人路线（整条折线，而非仅航点）太近。
+-- 逐段检查 Node_i -> Node_{i+1}，使用 XZ 距离。任一段过近即拒绝。
 local function tooCloseToPath(position)
-	for _, node in ipairs(EnemyService.GetRoute()) do
-		if horizontalDistance(node, position) < MIN_DISTANCE_FROM_PATH then
+	local route = EnemyService.GetRoute()
+	if #route == 0 then
+		return false
+	end
+	if #route == 1 then
+		return horizontalDistance(route[1], position) < MIN_DISTANCE_FROM_PATH
+	end
+	for i = 1, #route - 1 do
+		if distancePointToSegmentXZ(position, route[i], route[i + 1]) < MIN_DISTANCE_FROM_PATH then
 			return true
 		end
 	end

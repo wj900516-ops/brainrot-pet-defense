@@ -138,6 +138,54 @@ local function horizontalDistance(a, b)
 	return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
 end
 
+-- 点到线段（XZ）的最近距离（与服务端一致，仅 UX 近似）。
+local function distancePointToSegmentXZ(point, a, b)
+	local px, pz = point.X, point.Z
+	local ax, az = a.X, a.Z
+	local bx, bz = b.X, b.Z
+	local dx, dz = bx - ax, bz - az
+	local segLenSq = dx * dx + dz * dz
+	local t
+	if segLenSq <= 1e-6 then
+		t = 0
+	else
+		t = math.clamp(((px - ax) * dx + (pz - az) * dz) / segLenSq, 0, 1)
+	end
+	local cx, cz = ax + t * dx, az + t * dz
+	local ex, ez = px - cx, pz - cz
+	return math.sqrt(ex * ex + ez * ez)
+end
+
+-- 取按自然数字顺序排序后的路径点（镜像服务端排序，使 UX 段判定与服务端一致）。
+local function trailingNumber(name)
+	local s = string.match(name, "(%d+)%s*$")
+	return s and tonumber(s) or math.huge
+end
+local function sortedPathPoints()
+	local folder = Workspace:FindFirstChild("PathNodes") or Workspace:FindFirstChild("EnemyPath")
+	if not folder then
+		return {}
+	end
+	local items = {}
+	for _, n in ipairs(folder:GetChildren()) do
+		if n:IsA("BasePart") then
+			table.insert(items, n)
+		end
+	end
+	table.sort(items, function(a, b)
+		local na, nb = trailingNumber(a.Name), trailingNumber(b.Name)
+		if na ~= nb then
+			return na < nb
+		end
+		return a.Name < b.Name
+	end)
+	local pts = {}
+	for _, n in ipairs(items) do
+		table.insert(pts, n.Position)
+	end
+	return pts
+end
+
 -- 相机射线 → 地面落点（排除鬼影、自身角色、Towers，以投影到地面）。
 local function mouseGroundPoint()
 	local camera = Workspace.CurrentCamera
@@ -177,10 +225,15 @@ local function approxValid(groundPoint)
 	if horizontalDistance(groundPoint, hrp.Position) > MAX_PLACE_DISTANCE then
 		return false
 	end
-	local pathFolder = Workspace:FindFirstChild("PathNodes") or Workspace:FindFirstChild("EnemyPath")
-	if pathFolder then
-		for _, n in ipairs(pathFolder:GetChildren()) do
-			if n:IsA("BasePart") and horizontalDistance(n.Position, groundPoint) < MIN_DISTANCE_FROM_PATH then
+	-- 距路径：逐段（Node_i -> Node_{i+1}）检查，使 ghost 在路面（节点之间）也变红。
+	local pts = sortedPathPoints()
+	if #pts == 1 then
+		if horizontalDistance(pts[1], groundPoint) < MIN_DISTANCE_FROM_PATH then
+			return false
+		end
+	else
+		for i = 1, #pts - 1 do
+			if distancePointToSegmentXZ(groundPoint, pts[i], pts[i + 1]) < MIN_DISTANCE_FROM_PATH then
 				return false
 			end
 		end
