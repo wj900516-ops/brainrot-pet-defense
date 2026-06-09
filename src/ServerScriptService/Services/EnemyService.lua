@@ -31,6 +31,9 @@ local FALLBACK_SEGMENTS = 4 -- 兜底直线分段（生成 5 个航点）
 local REACH_WAYPOINT_DISTANCE = 3 -- 距航点多近算"已到达该航点"
 local ENEMY_SIZE = Vector3.new(3, 3, 3)
 local DEFAULT_ENEMY_ID = "LagBlob"
+-- 占位敌人配色（在 resolveDef 之前声明：普通敌人默认 ALIVE 色，受伤时变 HURT 色）。
+local COLOR_ALIVE = Color3.fromRGB(120, 200, 90)
+local COLOR_HURT = Color3.fromRGB(230, 180, 70)
 
 -- 内置兜底敌人定义（当 EnemyConfig 缺失/该 id 不存在时使用），保证不崩。
 local FALLBACK_ENEMY = {
@@ -66,7 +69,18 @@ local function resolveDef(enemyId)
 	local speed = (type(def.speed) == "number" and def.speed > 0) and def.speed or FALLBACK_ENEMY.speed
 	local reward = (type(def.killReward) == "number" and def.killReward >= 0) and def.killReward or FALLBACK_ENEMY.killReward
 	local displayName = (type(def.displayName) == "string" and def.displayName ~= "") and def.displayName or enemyId
-	return { maxHp = math.floor(maxHp), speed = speed, reward = math.floor(reward), displayName = displayName }
+	local size = (typeof(def.size) == "Vector3") and def.size or ENEMY_SIZE
+	local color = (typeof(def.color) == "Color3") and def.color or COLOR_ALIVE
+	local isBoss = def.isBoss == true
+	return {
+		maxHp = math.floor(maxHp),
+		speed = speed,
+		reward = math.floor(reward),
+		displayName = displayName,
+		size = size,
+		color = color,
+		isBoss = isBoss,
+	}
 end
 
 -- ---------- 运行时状态 ----------
@@ -168,17 +182,14 @@ local function resolveRoute()
 end
 
 -- ---------- 占位敌人模型 ----------
-local COLOR_ALIVE = Color3.fromRGB(120, 200, 90)
-local COLOR_HURT = Color3.fromRGB(230, 180, 70)
-
 local function buildEnemyModel(enemy)
 	local part = Instance.new("Part")
 	part.Name = "Enemy_" .. enemy.enemyId .. "_" .. tostring(enemy.number)
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
-	part.Size = ENEMY_SIZE
-	part.Color = COLOR_ALIVE
+	part.Size = enemy.size or ENEMY_SIZE -- Phase 14：Boss 用更大体型（来自 EnemyConfig.size）
+	part.Color = enemy.color or COLOR_ALIVE -- Phase 14：Boss 用不同颜色（来自 EnemyConfig.color）
 	part.Material = Enum.Material.SmoothPlastic
 	-- 初始位置由 SpawnEnemy 设为路径第一个航点。
 
@@ -220,9 +231,25 @@ end
 -- ---------- 公开 API ----------
 
 -- 生成一个敌人，返回其记录。
-function EnemyService.SpawnEnemy(enemyId)
+-- options（可选，全部来自服务端 WaveService；客户端无法影响这些值）：
+--   hpMult / speedMult / rewardMult：难度倍率（默认 1）。最终值 = 配置基础值 × 倍率。
+--   isBoss：标记本敌人为 Boss（仅用于标签/日志；玩法仍由 hp/speed/reward 决定）。
+-- 倍率与 Boss 视觉（体型/颜色，来自 EnemyConfig）均为配置/服务端驱动：不新增 remote、不改 MainUI。
+function EnemyService.SpawnEnemy(enemyId, options)
 	enemyId = (type(enemyId) == "string" and enemyId ~= "") and enemyId or DEFAULT_ENEMY_ID
 	local def = resolveDef(enemyId)
+
+	local function posMult(v)
+		return (type(v) == "number" and v > 0) and v or 1
+	end
+	local hpMult = posMult(options and options.hpMult)
+	local speedMult = posMult(options and options.speedMult)
+	local rewardMult = posMult(options and options.rewardMult)
+	local isBoss = (options and options.isBoss == true) or def.isBoss
+
+	local maxHp = math.max(1, math.floor(def.maxHp * hpMult))
+	local speed = def.speed * speedMult
+	local reward = math.max(0, math.floor(def.reward * rewardMult))
 
 	local r = resolveRoute()
 
@@ -231,10 +258,13 @@ function EnemyService.SpawnEnemy(enemyId)
 		enemyId = enemyId,
 		number = nextEnemyNumber,
 		displayName = def.displayName,
-		hp = def.maxHp,
-		maxHp = def.maxHp,
-		speed = def.speed,
-		reward = def.reward,
+		hp = maxHp,
+		maxHp = maxHp,
+		speed = speed,
+		reward = reward,
+		size = def.size,
+		color = def.color,
+		isBoss = isBoss,
 		alive = true,
 		targetIndex = 2, -- 生成在航点 1，朝航点 2 前进
 	}
