@@ -1,7 +1,7 @@
 -- TowerConfig (ModuleScript)
 -- 放在 ReplicatedStorage > Config > TowerConfig
 -- Phase 11：基础塔配置（仅放置所需）。占位视觉，无美术依赖。
--- range/damage/fireInterval 为 Phase 12 战斗预留的 stub，本阶段不使用。
+-- range/damage/attackInterval 为 Phase 12 塔攻击参数（自动攻击范围内最近敌人）。
 
 local TowerConfig = {}
 
@@ -15,10 +15,10 @@ TowerConfig.Towers = {
 		-- 占位视觉
 		size = Vector3.new(4, 8, 4),
 		color = Color3.fromRGB(120, 130, 245),
-		-- Phase 12 战斗 stub（本阶段不读取）
-		range = 24,
-		damage = 8,
-		fireInterval = 1.0,
+		-- Phase 12 战斗参数
+		range = 24, -- 攻击范围（studs，水平）
+		damage = 8, -- 每次攻击伤害
+		attackInterval = 1.0, -- 两次攻击的间隔（秒）
 	},
 }
 

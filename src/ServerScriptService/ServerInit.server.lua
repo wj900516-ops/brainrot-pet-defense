@@ -194,7 +194,9 @@ end
 EnemyService.Start({ onEscaped = WaveService.OnEnemyEscaped }) -- 敌人移动/清理 + 逃逸回调
 CombatService.Start({ onEnemyKilled = onEnemyKilled }) -- 宠物→敌人战斗（击杀奖励，未改动）
 WaveService.Start() -- 波次进程 + 基地血量 + 失败条件
-TowerService.Start() -- Phase 11：塔放置（建塔文件夹 + 玩家离开清理）
+-- Phase 11/12：塔放置 + 塔攻击。击杀复用同一 onEnemyKilled 奖励通道；
+-- DamageEnemy 的 alive 一次性守卫保证宠物/塔击杀同一敌人不重复发奖。
+TowerService.Start({ onEnemyKilled = onEnemyKilled })
 
 -- ---------- Phase 11：塔放置（服务端权威） ----------
 -- 客户端只发 "PlaceTower" 意图；服务端读取玩家角色位置并校验后放置。
@@ -280,4 +282,4 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 11 tower placement online.")
+print("[ServerInit] Ready. Phase 12 tower attack online.")
