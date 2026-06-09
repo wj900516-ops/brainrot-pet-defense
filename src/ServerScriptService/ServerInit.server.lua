@@ -199,9 +199,10 @@ TowerService.Start() -- Phase 11：塔放置（建塔文件夹 + 玩家离开清
 -- ---------- Phase 11：塔放置（服务端权威） ----------
 -- 客户端只发 "PlaceTower" 意图；服务端读取玩家角色位置并校验后放置。
 -- 客户端不能伪造位置/花费/拥有者，也不能免费造塔。
-towerRemote.OnServerEvent:Connect(function(player, action)
+towerRemote.OnServerEvent:Connect(function(player, action, position)
 	if action == "PlaceTower" then
-		local result = TowerService.TryPlaceTower(player)
+		-- position 为客户端鬼影预览的地面落点（可空）；服务端完整校验，不信任客户端。
+		local result = TowerService.TryPlaceTower(player, position)
 		if result and result.success then
 			pushData(player) -- 扣币后刷新 MainUI 金币
 		end
