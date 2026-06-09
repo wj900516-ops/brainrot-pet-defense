@@ -34,7 +34,7 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 | 网络 | `ReplicatedStorage/Remotes/Net.lua` | 按需创建/获取 RemoteEvent | 无 |
 | 宠物 | `ServerScriptService/Services/PetService.lua` | 起始宠物生成/跟随/攻击；只读 `GetActivePet` | PlayerDataService, PetConfig, DummyTargetService |
 | 敌人 | `ServerScriptService/Services/EnemyService.lua`（Phase 8/10） | 敌人生成/航点移动/受伤/死亡/逃逸；`ClearAll`/`GetBasePosition` | EnemyConfig |
-| 波次/会话 | `ServerScriptService/Services/WaveService.lua`（Phase 8/9） | 波次进程 + 基地血量 + 失败条件 + 基地状态板 | EnemyService |
+| 波次/会话 | `ServerScriptService/Services/WaveService.lua`（Phase 8/9/13） | 波次进程 + 基地血量 + 失败条件 + 基地状态板 + 失败后重开（ResetSession） | EnemyService |
 | 战斗 | `ServerScriptService/Services/CombatService.lua`（Phase 8） | 宠物→敌人伤害判定；击杀回调 | PetService, EnemyService |
 | 塔 | `ServerScriptService/Services/TowerService.lua`（Phase 11/12） | 服务端校验+放置占位塔；Phase 12 自动攻击范围内最近敌人 | PlayerDataService, EnemyService, TowerConfig |
 | 编排 | `ServerScriptService/ServerInit.server.lua` | 连接 PlayerAdded、接线 Remote、击杀→奖励 | 全部 |
@@ -86,6 +86,10 @@ Phase 12：已放置的塔自动攻击范围内最近敌人，击杀复用宠物
 - C→S `"PlaceTower", groundPoint?` → 服务端完整校验（金币/距路径/距塔/距玩家/竖直）后扣币放置
   （Phase 11.5：客户端鬼影预览发送鼠标地面落点；为空则回退玩家脚下）
 - S→C `"Result", { success, reason, cost? }` → 客户端放置反馈。详见 [`Phase11-TowerPlacement.md`](Phase11-TowerPlacement.md) / [`Phase11_5-TowerPlacementUX.md`](Phase11_5-TowerPlacementUX.md)
+
+`RestartRemote`（Phase 13）
+- C→S `"Restart"`（仅意图）→ 仅失败后允许：清敌人/塔 + 重置基地/波次 + 重启刷怪
+- S→C `"Result", { success, reason }`；`"SessionState", { failed }`（失败/重开广播、加入单发）。详见 [`Phase13-RunRestart.md`](Phase13-RunRestart.md)
 
 RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/` 文件夹下，**无需在 Studio 手动创建**。
 

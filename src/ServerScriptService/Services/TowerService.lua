@@ -269,6 +269,17 @@ local function clearPlayerTowers(player)
 	end
 end
 
+-- 清除所有塔（Phase 13：会话重开时调用）。清后攻击 Heartbeat 不再遍历到它们。
+-- 由 ServerInit 在重开时编排调用（不在攻击 Heartbeat 迭代期间调用，故安全结构性移除）。
+function TowerService.ClearAll()
+	for i = #towers, 1, -1 do
+		if towers[i].model then
+			towers[i].model:Destroy()
+		end
+		table.remove(towers, i)
+	end
+end
+
 -- ---------- Phase 12：塔攻击 ----------
 
 -- 寻找塔范围内最近的存活敌人（水平距离）。
