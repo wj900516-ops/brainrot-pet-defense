@@ -95,6 +95,12 @@ local function pushProgressResult(player, result)
 		end
 		pushData(player)
 	end
+
+	-- Phase 16B 修复：任务奖励若导致升级（技能点 +N）→ 同步刷新 SkillTreeDebug（与 onEnemyKilled 一致），
+	-- 否则面板的技能点数字会停留在旧值（MainUI 由 pushData 更新，但调试 UI 走 SkillRemote）。
+	if result.reward and (result.reward.leveledUp or (result.reward.skillPointsAdded or 0) > 0) then
+		pushSkillState(player)
+	end
 end
 
 -- ---------- 玩家生命周期 ----------
@@ -244,6 +250,8 @@ local function onEnemyKilled(player, enemy)
 				reward.skillPointsAdded or 0,
 				reward.skillPoints or 0
 			))
+			-- Phase 16B 修复：升级使技能点 +N → 同步刷新 SkillTreeDebug 的点数（否则面板停留在旧值）。
+			pushSkillState(player)
 		end
 		-- 奖励反馈：复用既有 taskRemote "Reward" 通道（MainUI 已监听）。Phase 15 追加升级文本。
 		taskRemote:FireClient(player, "Reward", reward)
