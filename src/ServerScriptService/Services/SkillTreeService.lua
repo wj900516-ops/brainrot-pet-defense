@@ -208,11 +208,18 @@ function SkillTreeService.GetPublicState(player)
 			})
 		end
 	end
+	-- Phase 16C：暴露"可消费 allowlist"，供玩家 UI 区分可消费 vs Coming Soon（不改服务端校验）。
+	local enabledIds = {}
+	for _, id in ipairs(ENABLED_ORDER) do
+		table.insert(enabledIds, id)
+	end
+
 	return {
 		skillPoints = PlayerDataService.GetSkillPoints(player),
 		totalPoints = SkillTreeService.GetTotalPoints(player),
 		unlocked = unlocked,
-		skills = skills,
+		skills = skills, -- 兼容旧调试 UI
+		enabledIds = enabledIds, -- Phase 16C：玩家 UI 用
 	}
 end
 
