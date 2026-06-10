@@ -113,7 +113,7 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
   Task = { currentTaskId, currentTaskProgress, taskChainIndex },  -- Phase 3，持久化于 Phase 4
 }
 ```
-经验规则（Phase 15）：升到下一级所需 XP = `floor(100 * Level^1.35)`（集中于 `PlayerDataService.GetXPRequiredForLevel`）。
+经验规则（Phase 15）：升到下一级所需 XP = `floor(100 * Level^2)`（集中于 `PlayerDataService.GetXPRequiredForLevel`；L1→2=100、L5→6=2,500、L10→11=10,000、L50→51=250,000）。
 XP 满阈值即升级、扣阈值、`SkillPoints += 1`、溢出结转；一次大额奖励可跨多级。重开（R）不重置玩家进度（Level/XP/SkillPoints/Coins/Pets）。
 持久化与迁移见 [`Phase4-Persistence.md`](Phase4-Persistence.md)；宠物拥有/装备见 [`Phase6-PetInventory.md`](Phase6-PetInventory.md)；玩家进度见 [`Phase15-PlayerProgression.md`](Phase15-PlayerProgression.md)。
 

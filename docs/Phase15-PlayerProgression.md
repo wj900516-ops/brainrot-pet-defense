@@ -30,18 +30,22 @@
 
 集中式 helper（`PlayerDataService.GetXPRequiredForLevel`）：
 ```
-xpRequired(level) = floor(100 * level ^ 1.35)
+xpRequired(level) = floor(100 * level ^ 2)
 ```
-（`XP_CURVE_BASE = 100`，`XP_CURVE_EXPONENT = 1.35`。`XP` 表示当前等级内进度 `0 ~ xpRequired(Level)-1`。）
+（`XP_CURVE_BASE = 100`，`XP_CURVE_EXPONENT = 2`。`XP` 表示当前等级内进度 `0 ~ xpRequired(Level)-1`。）
 
 | 升级 | 所需 XP |
 |-----:|--------:|
 | L1 → L2  | 100 |
-| L5 → L6  | ~878 |
-| L10 → L11 | ~2238 |
-| L20 → L21 | ~5709 |
+| L2 → L3  | 400 |
+| L3 → L4  | 900 |
+| L4 → L5  | 1,600 |
+| L5 → L6  | 2,500 |
+| L10 → L11 | 10,000 |
+| L20 → L21 | 40,000 |
+| L50 → L51 | 250,000 |
 
-指数 >1 → 等级越高单级所需 XP 越多（后期更慢），为未来大型技能树节流点数产出。
+平方曲线 → 等级越高单级所需 XP 显著增多（后期大幅变慢），为未来大型/深度技能树节流点数产出；早期等级仍可较快达到。
 
 ## 5. Enemy XP Values（敌人 XP）
 
@@ -51,7 +55,7 @@ xpRequired(level) = floor(100 * level ^ 1.35)
 | `BossLagBlob`（Boss） | 18 | **30** | Tier1 ~180 / Tier2 ~210 / Tier3 ~240（× `5 + tier`） |
 
 - XP 复用 Phase 14 的 **同一 `rewardMult`**（普通怪 = 1；Boss = `5 + tier`），与金币缩放一致。
-- Boss XP 显著高于普通怪，但 Tier 1 约 180（≈ 早期 1~2 级），里程碑感强而不至于早期暴涨。
+- Boss XP 显著高于普通怪，但 Tier 1 约 180（在平方曲线下 ≈ 早期约 1 级），里程碑感强而不至于早期暴涨。
 
 ## 6. Data Migration（v2 → v3）
 

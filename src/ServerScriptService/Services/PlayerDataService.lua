@@ -21,11 +21,12 @@ local CURRENT_DATA_VERSION = 3 -- Phase 15：新增玩家进度技能点（Skill
 local DATASTORE_NAME = "PlayerData_v1"
 local MAX_RETRIES = 3
 local RETRY_DELAY = 2 -- 秒
--- XP 曲线（Phase 15）：升到下一级所需经验随等级递增 = floor(100 * level^1.35)。
+-- XP 曲线（Phase 15）：升到下一级所需经验随等级递增 = floor(100 * level^2)。
 --   XP 字段表示"当前等级内进度"（0 ~ GetXPRequiredForLevel(Level)-1）；
---   满则升级、扣阈值、+1 技能点、溢出结转。指数 >1 使后期升级更慢，为未来大型技能树节流产出。
+--   满则升级、扣阈值、+1 技能点、溢出结转。平方曲线使后期升级显著更慢，为未来大型/深度技能树节流产出。
+--   阈值示例：L1→2=100，L2→3=400，L5→6=2,500，L10→11=10,000，L20→21=40,000，L50→51=250,000。
 local XP_CURVE_BASE = 100 -- 基础系数
-local XP_CURVE_EXPONENT = 1.35 -- 指数（>1 → 越高越难）
+local XP_CURVE_EXPONENT = 2 -- 指数（平方：越高越难）
 local AUTO_SAVE_INTERVAL_SECONDS = 180 -- 周期自动保存间隔（安全网）
 local AUTO_SAVE_STAGGER_SECONDS = 0.1 -- 同批玩家之间的轻微错峰，避免同帧批量 SetAsync
 
@@ -49,7 +50,8 @@ local function deepCopy(source)
 end
 
 -- 升级所需经验（Phase 15，集中式公式）。level = 当前等级，返回从该级升到下一级所需 XP。
--- 公式：floor(XP_CURVE_BASE * level^XP_CURVE_EXPONENT)。随等级递增（L1→2:100, L5→6:~877, L10→11:~2238…）。
+-- 公式：floor(XP_CURVE_BASE * level^XP_CURVE_EXPONENT) = floor(100 * level^2)。
+-- 随等级递增（L1→2:100, L2→3:400, L5→6:2500, L10→11:10000, L20→21:40000, L50→51:250000）。
 local function getXPRequiredForLevel(level)
 	level = (type(level) == "number" and level >= 1) and math.floor(level) or 1
 	return math.floor(XP_CURVE_BASE * (level ^ XP_CURVE_EXPONENT))
