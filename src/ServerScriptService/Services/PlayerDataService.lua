@@ -16,6 +16,9 @@ local PlayerDataService = {}
 
 -- ---------- 常量 ----------
 local CURRENT_DATA_VERSION = 3 -- Phase 15：新增玩家进度技能点（SkillPoints）+ 渐进 XP 曲线
+-- Phase 15：技能点经济在 v3 引入。迁移时，仅 v3+ 存档保留 Level/XP/SkillPoints；
+-- 更旧（v1/v2）的旧版 Level/XP 与新经济不兼容 → 进度重置为默认（1/0/0），其余数据保留。
+local PROGRESSION_SCHEMA_VERSION = 3
 -- 注意：DataStore 名称保持 "PlayerData_v1" 不变，避免孤立 Phase 4/5 存档。
 -- schema 迁移通过记录内的 DataVersion 完成，而非更换 DataStore。
 local DATASTORE_NAME = "PlayerData_v1"
@@ -140,22 +143,37 @@ local function reconcile(loaded)
 			CURRENT_DATA_VERSION
 		))
 		-- reconcile 本身即迁移：保留所有已知旧字段，缺失的新字段补默认值。
-		-- v1→v2 补齐 Inventory.Pets / EquippedPets；v2→v3 补齐 SkillPoints（默认 0）。
-		-- 不丢弃任何现有数据（金币/宠物/装备/任务/经验等级均保留）。
+		-- v1→v2 补齐 Inventory.Pets / EquippedPets。
+		-- v2→v3（Phase 15）：玩家进度（Level / XP / SkillPoints）是 v3 引入的"新技能点经济"。
+		--   旧版 Level/XP 与新经济不兼容（可能高等级却 0 技能点，首个技能点需数百万 XP），
+		--   因此对 v3 之前的存档【重置进度为 Level 1 / XP 0 / SkillPoints 0】（见下方进度字段处理）。
+		--   金币 / 宠物 / 装备 / 任务 / 设置等"非进度"数据无论版本都照常保留，不丢弃。
 	end
 
 	if type(loaded.Coins) == "number" then
 		data.Coins = loaded.Coins
 	end
-	if type(loaded.Level) == "number" then
-		data.Level = math.max(1, math.floor(loaded.Level))
-	end
-	if type(loaded.XP) == "number" then
-		data.XP = math.max(0, math.floor(loaded.XP))
-	end
-	-- Phase 15（v2→v3 迁移）：缺失则保留默认 0；存在则规范化为非负整数。
-	if type(loaded.SkillPoints) == "number" then
-		data.SkillPoints = math.max(0, math.floor(loaded.SkillPoints))
+
+	-- 玩家进度（Phase 15 的新技能点经济）。仅当存档已是 v3+ 时才保留 Level/XP/SkillPoints；
+	-- v3 之前（v1/v2）→ 保留 defaultData 的 Level 1 / XP 0 / SkillPoints 0（重置进度，开启新经济）。
+	-- 用 >= 而非 == ：未来 v4/v5 等更新版本仍与新进度经济兼容，应继续保留。
+	if version >= PROGRESSION_SCHEMA_VERSION then
+		if type(loaded.Level) == "number" then
+			data.Level = math.max(1, math.floor(loaded.Level))
+		end
+		if type(loaded.XP) == "number" then
+			data.XP = math.max(0, math.floor(loaded.XP))
+		end
+		if type(loaded.SkillPoints) == "number" then
+			data.SkillPoints = math.max(0, math.floor(loaded.SkillPoints))
+		end
+	else
+		warn(string.format(
+			"[PlayerDataService] v%s 存档迁移到 v%d：重置玩家进度为 Level 1 / XP 0 / SkillPoints 0"
+				.. "（新技能点经济），金币/宠物/装备/任务等保留",
+			tostring(version),
+			CURRENT_DATA_VERSION
+		))
 	end
 
 	if type(loaded.CompletedTasks) == "table" then

@@ -9,7 +9,7 @@
 - 击杀走既有奖励通道 `RewardService.GiveReward(player, { rewardCoins, rewardXP })`（任务完成也共用此路径）。
 - 升级与技能点累计集中在 `PlayerDataService.AddXP`（服务端权威）。
 - XP 曲线集中在单一 helper `PlayerDataService.GetXPRequiredForLevel(level)`，随等级递增以节流后期产出。
-- 持久化 schema 从 **v2 → v3**：新增 `SkillPoints`（`Level`/`XP` 早已存在）。DataStore 名称不变。
+- 持久化 schema 从 **v2 → v3**：新增 `SkillPoints`。**这是全新的技能点进度经济** —— 旧版 v1/v2 的 `Level`/`XP` 与之不兼容，故迁移时进度重置为 `1/0/0`（金币/宠物等保留，见 §6）。DataStore 名称不变。
 
 ## 2. Player Fantasy（玩家体验）
 
@@ -59,11 +59,18 @@ xpRequired(level) = floor(100 * level ^ 2)
 
 ## 6. Data Migration（v2 → v3）
 
-- `DATASTORE_NAME = "PlayerData_v1"`（**不变**）；`CURRENT_DATA_VERSION = 2 → 3`。
-- 迁移即 `reconcile`：以全新默认数据为底，逐字段合并存档：
-  - **保留**：`Coins`、`Level`、`XP`、`Inventory.Pets`、`EquippedPets`、`CompletedTasks`、`Settings`、`Task`。
-  - **新增**：`SkillPoints` —— 存档缺失则取默认 `0`；存在则规范化为非负整数。
-- 不丢弃任何现有数据（不 wipe）。加载失败的会话仍按既有策略标记"不可保存"，避免覆盖云端好数据。
+Phase 15 引入**全新的技能点进度经济**。旧版 v1/v2 的 `Level`/`XP` 来自不同的等级体系，与新经济不兼容
+（迁移后会出现"高等级却 0 技能点、首个技能点需数百万 XP"的坏体验）。因此迁移**把玩家进度当作新系统重置**。
+
+- `DATASTORE_NAME = "PlayerData_v1"`（**不变**）；`CURRENT_DATA_VERSION = 3`（**不变**）。
+- 迁移即 `reconcile`：以全新默认数据为底，逐字段合并存档。
+- **进度字段按版本处理**（`PROGRESSION_SCHEMA_VERSION = 3`，用 `version >= 3` 判断）：
+  - 存档 **< v3**（v1/v2）→ **重置进度**为 `Level 1 / XP 0 / SkillPoints 0`（开启新经济）。
+  - 存档 **≥ v3** → **正常保留** `Level / XP / SkillPoints`（**不会**每次加载重置）。
+- **始终保留**（与版本无关）：`Coins`、`Inventory.Pets`、`EquippedPets`、`CompletedTasks`、`Settings`、`Task` 及其它既有数据。
+- 迁移**只发生一次**：`reconcile` 末尾把 `DataVersion` 写为 3；保存后即为 v3，后续加载保留进度。
+- 不丢弃金币/宠物（不 wipe）。加载失败的会话仍标记"不可保存"，避免覆盖云端好数据。
+- 新玩家（云端无存档）走 `defaultData()` 直接得 `1/0/0`（不经 reconcile）。
 
 ## 7. RewardService / Public Data
 
@@ -97,7 +104,7 @@ xpRequired(level) = floor(100 * level ^ 2)
 
 ## 12. Acceptance Criteria（验收）
 
-1. v2 存档安全迁移到 v3，金币/宠物/装备等全部保留；新字段 `SkillPoints` 默认 0。
+1. v2 存档迁移到 v3：金币/宠物/装备/任务保留；玩家进度**重置**为 `Level 1 / XP 0 / SkillPoints 0`（新经济）。v3 存档再次加载**保留**进度（不重置）。
 2. 新玩家 `Level 1 / XP 0 / SkillPoints 0`。
 3. 杀普通 `LagBlob` 得金币 + 小额 XP；杀 `BossLagBlob` 得更高金币 + 更高 XP。
 4. 逃逸（含 Boss）不发金币、不发 XP。
