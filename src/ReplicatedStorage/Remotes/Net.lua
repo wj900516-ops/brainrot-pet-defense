@@ -20,6 +20,7 @@ Net.TaskRemoteName = "TaskRemote"
 Net.PetRemoteName = "PetRemote"
 Net.TowerRemoteName = "TowerRemote"
 Net.RestartRemoteName = "RestartRemote"
+Net.SkillRemoteName = "SkillRemote"
 
 -- 获取（服务端则创建）指定名称的 RemoteEvent。
 local function getEvent(name)
@@ -57,6 +58,10 @@ end
 
 function Net.RestartRemote()
 	return getEvent(Net.RestartRemoteName)
+end
+
+function Net.SkillRemote()
+	return getEvent(Net.SkillRemoteName)
 end
 
 return Net

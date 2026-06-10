@@ -16,6 +16,7 @@ local RunService = game:GetService("RunService")
 
 local PlayerDataService = require(script.Parent.PlayerDataService)
 local EnemyService = require(script.Parent.EnemyService)
+local SkillEffectResolver = require(script.Parent.SkillEffectResolver) -- Phase 16B：twr_damage 修正
 
 local TowerService = {}
 
@@ -343,14 +344,17 @@ function TowerService.Start(options)
 					if target then
 						tower.lastAttack = now
 						flashBeam(tower.model.Position, target.model.Position)
+						-- Phase 16B：应用塔主的 twr_damage 修正（TowerDamageMultiplier，O(1) 读缓存；
+						-- 客户端无法影响）。塔基础伤害仍来自服务端 TowerConfig。
+						local owner = Players:GetPlayerByUserId(tower.ownerUserId)
+						local dmgBonus = owner and SkillEffectResolver.GetNumber(owner, "TowerDamageMultiplier", 0) or 0
+						-- 用浮点精确施加 +%（敌人 hp 为浮点，DamageEnemy 接受浮点），避免对小整数取整抹掉低级加成。
+						local dmg = (tower.damage or 8) * (1 + math.max(0, dmgBonus))
 						-- DamageEnemy 的 alive 一次性守卫保证击杀只结算一次：
 						-- 若宠物/另一座塔已击杀同一敌人，这里 DamageEnemy 返回 false，不重复发奖。
-						local killed = EnemyService.DamageEnemy(target, tower.damage or 8)
-						if killed and onEnemyKilled then
-							local owner = Players:GetPlayerByUserId(tower.ownerUserId)
-							if owner then
-								onEnemyKilled(owner, target)
-							end
+						local killed = EnemyService.DamageEnemy(target, dmg)
+						if killed and onEnemyKilled and owner then
+							onEnemyKilled(owner, target)
 						end
 					end
 				end

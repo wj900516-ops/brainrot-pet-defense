@@ -18,6 +18,7 @@ local RunService = game:GetService("RunService")
 
 local PetService = require(script.Parent.PetService)
 local EnemyService = require(script.Parent.EnemyService)
+local SkillEffectResolver = require(script.Parent.SkillEffectResolver) -- Phase 16B：pet_damage 修正
 
 local CombatService = {}
 
@@ -66,7 +67,12 @@ function CombatService.Start(options)
 					local target = findNearestEnemy(pet.model.Position, range)
 					if target then
 						combatCooldown[player] = now
-						local killed = EnemyService.DamageEnemy(target, damage)
+						-- Phase 16B：应用宠物主人的 pet_damage 修正（PetDamageMultiplier，O(1) 读缓存；
+						-- 客户端无法影响）。宠物基础伤害仍来自服务端 PetConfig。
+						local petBonus = SkillEffectResolver.GetNumber(player, "PetDamageMultiplier", 0)
+						-- 用浮点精确施加 +%（敌人 hp 为浮点，DamageEnemy 接受浮点），避免对小整数取整抹掉低级加成。
+						local effDamage = damage * (1 + math.max(0, petBonus))
+						local killed = EnemyService.DamageEnemy(target, effDamage)
 						if killed and onEnemyKilled then
 							onEnemyKilled(player, target)
 						end

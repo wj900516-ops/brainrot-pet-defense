@@ -15,7 +15,9 @@ local Players = game:GetService("Players")
 local PlayerDataService = {}
 
 -- ---------- 常量 ----------
-local CURRENT_DATA_VERSION = 3 -- Phase 15：新增玩家进度技能点（SkillPoints）+ 渐进 XP 曲线
+local CURRENT_DATA_VERSION = 4 -- Phase 16B：新增技能树持久化 SkillTree（v3 -> v4）
+-- Phase 16B：技能树用【独立】的版本标记 SkillTree.Version（仿 Phase 15 的 ProgressionVersion），便于将来独立迁移。
+local CURRENT_SKILLTREE_VERSION = 1
 -- Phase 15：技能点经济用【独立】的进度版本标记 ProgressionVersion，而非 DataVersion。
 -- 原因：早期 Play Solo 曾把带"旧版 Level/XP"的存档写成 DataVersion=3，故 DataVersion 不足以
 -- 判断"新经济是否已初始化"。迁移以 ProgressionVersion 为准：缺失/ <1 → 重置进度并标记为 1；
@@ -72,7 +74,12 @@ local function defaultData()
 		Coins = 0,
 		Level = 1,
 		XP = 0,
-		SkillPoints = 0, -- Phase 15：升级累计的技能点（暂不可消费）
+		SkillPoints = 0, -- Phase 15：升级累计的技能点（Phase 16B 起可消费到技能树）
+		-- Phase 16B：玩家技能树。只存"按 id 的已投等级"；branch/total 等派生量动态计算、不持久化。
+		SkillTree = {
+			Version = CURRENT_SKILLTREE_VERSION,
+			Unlocked = {}, -- [skillId] = rank
+		},
 		CompletedTasks = {}, -- [taskId] = 完成次数
 		Inventory = {
 			Pets = {}, -- 数组：{ uid, petId, acquiredAt }
@@ -221,6 +228,30 @@ local function reconcile(loaded)
 		if type(t.taskChainIndex) == "number" then
 			data.Task.taskChainIndex = math.max(1, math.floor(t.taskChainIndex))
 		end
+	end
+
+	-- Phase 16B（v3 -> v4 迁移）：技能树。
+	-- v3 存档无 SkillTree → 保留 defaultData 的 { Version = 1, Unlocked = {} }（不影响 Coins/进度/宠物）。
+	-- 这里只做【结构性】清洗：保留 Version 与 Unlocked（仅 string 键 + 非负整数 rank）。
+	-- 【配置感知】清洗（丢弃未知 skillId、按 maxRank 夹紧）由 SkillTreeService.SanitizeOnLoad 完成
+	-- （PlayerDataService 是最底层，不依赖 SkillTreeConfig）。
+	if type(loaded.SkillTree) == "table" then
+		local st = loaded.SkillTree
+		if type(st.Version) == "number" then
+			data.SkillTree.Version = math.max(1, math.floor(st.Version))
+		end
+		local unlocked = {}
+		if type(st.Unlocked) == "table" then
+			for skillId, rank in pairs(st.Unlocked) do
+				if type(skillId) == "string" and type(rank) == "number" then
+					local r = math.floor(rank)
+					if r > 0 then
+						unlocked[skillId] = r
+					end
+				end
+			end
+		end
+		data.SkillTree.Unlocked = unlocked
 	end
 
 	data.DataVersion = CURRENT_DATA_VERSION
@@ -378,6 +409,61 @@ function PlayerDataService.AddXP(player, amount)
 		data.SkillPoints += levelsGained
 	end
 	return data, levelsGained
+end
+
+-- ---------- 技能树读写（Phase 16B；服务端调用，校验在 SkillTreeService） ----------
+
+-- 当前可用技能点。
+function PlayerDataService.GetSkillPoints(player)
+	local data = dataByPlayer[player]
+	return data and data.SkillPoints or 0
+end
+
+-- 调整技能点（delta 可负）。下限夹到 0（防负；调用方应已校验足够）。返回新值（无数据返回 nil）。
+function PlayerDataService.AddSkillPoints(player, delta)
+	local data = dataByPlayer[player]
+	if not data then
+		return nil
+	end
+	delta = (type(delta) == "number") and math.floor(delta) or 0
+	data.SkillPoints = math.max(0, data.SkillPoints + delta)
+	return data.SkillPoints
+end
+
+-- 某技能的已投等级（0 表示未投）。
+function PlayerDataService.GetSkillRank(player, skillId)
+	local data = dataByPlayer[player]
+	if not data or type(skillId) ~= "string" then
+		return 0
+	end
+	return data.SkillTree.Unlocked[skillId] or 0
+end
+
+-- 设置某技能等级（服务端，假定已校验）。rank<=0 视为移除该键。
+function PlayerDataService.SetSkillRank(player, skillId, rank)
+	local data = dataByPlayer[player]
+	if not data or type(skillId) ~= "string" or type(rank) ~= "number" then
+		return
+	end
+	rank = math.floor(rank)
+	if rank > 0 then
+		data.SkillTree.Unlocked[skillId] = rank
+	else
+		data.SkillTree.Unlocked[skillId] = nil
+	end
+end
+
+-- 整张已解锁表的拷贝（只读：{ [skillId] = rank }）。供 SkillTreeService / EffectResolver 读取。
+function PlayerDataService.GetSkillTreeUnlocked(player)
+	local data = dataByPlayer[player]
+	if not data then
+		return {}
+	end
+	local out = {}
+	for skillId, rank in pairs(data.SkillTree.Unlocked) do
+		out[skillId] = rank
+	end
+	return out
 end
 
 -- 返回可安全发送给客户端的精简数据（不含 Inventory/Settings 等字段）。
