@@ -227,8 +227,9 @@ SkillTreeConfig.GetTree("Pet_Toasty")  -- 未来：宠物树（现返回 nil，P
    - `twr_damage`（Tower，钩塔属性）
    - `pet_damage`（Pet，钩宠物属性）
    （Defense 的 `def_base_reinforce` 可作为第 4 个"拉伸目标"，因它最易测：开局看 Base HP 上限变化。）
-2. **持久化**：`PlayerDataService` 加 `SkillTree = { Unlocked = {} }` + `SkillTreeVersion = 1`；
+2. **持久化**：`PlayerDataService` 加 `SkillTree = { Version = 1, Unlocked = {} }`（版本标记**内嵌**于 `SkillTree.Version`）；
    `CURRENT_DATA_VERSION` 3 → 4；reconcile 做未知 id 丢弃 + rank clamp（仿 Phase 15 迁移与 marker 模式）。
+   只存 `[skillId] = rank`，**不持久化** branch/total 等派生量（由 `Unlocked` + 配置动态计算）。
 3. **服务端消费端点**：新增最小 `SkillRemote`：C→S `"Spend", skillId`（仅意图）；
    S→C `"Result", { success, reason, skillId, rank }` 与 `"Update", skillTreePublic`。全部校验在服务端（§6）。
 4. **效果解析层**：新增 `SkillEffectResolver`，先只实现这 3 个 `effectType` 的聚合；在对应 hook 各加 1 行乘法。
