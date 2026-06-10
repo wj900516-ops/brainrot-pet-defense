@@ -194,12 +194,35 @@ local function onEnemyKilled(player, enemy)
 		return
 	end
 	-- 复用 RewardService.GiveReward(player, task)：task 只需带 rewardCoins/rewardXP 字段。
-	local reward = RewardService.GiveReward(player, { rewardCoins = enemy.reward or 0, rewardXP = 0 })
-	pushData(player) -- 刷新 MainUI 的金币/等级/经验
+	-- Phase 15：击杀同时发放 XP（enemy.xpReward，服务端权威；普通小额、Boss 更高）。
+	local reward = RewardService.GiveReward(player, {
+		rewardCoins = enemy.reward or 0,
+		rewardXP = enemy.xpReward or 0,
+	})
+	pushData(player) -- 刷新 MainUI 的金币/等级/经验/技能点
 
-	-- Phase 8.5：奖励反馈。复用既有奖励反馈通道 —— MainUI 已监听 taskRemote "Reward" 并显示
-	-- "+N Coins, +M XP!"。因此无需改 MainUI、无需新增 remote，服务端仍是唯一真相。
+	-- Phase 15：QA 可见日志（XP 获得 / 升级 / 技能点）。
 	if reward then
+		print(string.format(
+			"[Reward] %s 击杀 %s：+%d Coins，+%d XP（当前 XP %d，Level %d，SP %d）",
+			player.Name,
+			enemy.displayName or enemy.enemyId or "enemy",
+			reward.coinsAdded or 0,
+			reward.xpAdded or 0,
+			reward.newXP or 0,
+			reward.level or 1,
+			reward.skillPoints or 0
+		))
+		if reward.leveledUp then
+			print(string.format(
+				"[Progression] %s 升级！现 Level %d，+%d 技能点（共 %d）",
+				player.Name,
+				reward.level or 1,
+				reward.skillPointsAdded or 0,
+				reward.skillPoints or 0
+			))
+		end
+		-- 奖励反馈：复用既有 taskRemote "Reward" 通道（MainUI 已监听）。Phase 15 追加升级文本。
 		taskRemote:FireClient(player, "Reward", reward)
 	end
 end

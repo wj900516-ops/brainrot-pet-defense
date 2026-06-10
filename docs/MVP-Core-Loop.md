@@ -28,8 +28,8 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 
 | 层 | 文件 | 职责 | 依赖 |
 |----|------|------|------|
-| 数据 | `ServerScriptService/Services/PlayerDataService.lua` | 内存玩家数据；预留 DataStore 接口 | 无 |
-| 奖励 | `ServerScriptService/Services/RewardService.lua` | 发金币/经验，返回结构化结果 | PlayerDataService |
+| 数据 | `ServerScriptService/Services/PlayerDataService.lua`（Phase 4/6/15） | 玩家数据 + DataStore 持久化；Phase 15：渐进 XP 曲线 `GetXPRequiredForLevel`、升级 +1 技能点、`SkillPoints` 字段、v2→v3 迁移 | 无 |
+| 奖励 | `ServerScriptService/Services/RewardService.lua`（Phase 15） | 发金币/经验，返回结构化结果（含 `skillPoints`/`skillPointsAdded`/`leveledUp`） | PlayerDataService |
 | 任务 | `ServerScriptService/Services/TaskService.lua` | 分配/跟踪/结算任务 | RewardService, PlayerDataService |
 | 网络 | `ReplicatedStorage/Remotes/Net.lua` | 按需创建/获取 RemoteEvent | 无 |
 | 宠物 | `ServerScriptService/Services/PetService.lua` | 起始宠物生成/跟随/攻击；只读 `GetActivePet` | PlayerDataService, PetConfig, DummyTargetService |
@@ -47,8 +47,9 @@ GameEventService.EnemyDefeated:Fire(player, enemyId)
 ```
 WaveService（周期）→ EnemyService.SpawnEnemy → 敌人朝基地移动
 CombatService（每帧）→ 已装备宠物攻击范围内最近敌人 → EnemyService.DamageEnemy
-  → 致命一击 → ServerInit.onEnemyKilled → RewardService.GiveReward({rewardCoins}) → pushData
+  → 致命一击 → ServerInit.onEnemyKilled → RewardService.GiveReward({rewardCoins, rewardXP}) → pushData
 ```
+Phase 15：击杀同时发放 XP（`enemy.xpReward`，普通怪小额、Boss 更高且随梯队 rewardMult 放大）；XP 升级、每级 +1 技能点（见上方数据结构说明）。逃逸不发 XP/金币。
 敌人/宠物为服务端 Anchored Part，自动复制，**无新增 remote**；战斗 server-authoritative。详见 [`Phase8-CombatLoop.md`](Phase8-CombatLoop.md)。
 
 ## 防御会话（Phase 9）
@@ -72,7 +73,7 @@ Boss 为 `BossLagBlob` 配置项（更大体型/紫色/更高基础奖励）× B
 
 `PlayerDataRemote`
 - C→S `"Request"` → 服务端回推一次公开数据
-- S→C `"Update", publicData` → `{ Coins, Level, XP, XpForNextLevel }`
+- S→C `"Update", publicData` → `{ Coins, Level, XP, XpForNextLevel, SkillPoints }`（Phase 15：`XpForNextLevel` 随等级变化、新增 `SkillPoints`）
 
 `TaskRemote`
 - C→S `"Request"` → 回推当前任务
@@ -102,8 +103,10 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
 
 ```lua
 {
-  DataVersion = 2,                 -- Phase 6：宠物库存/装备
+  DataVersion = 3,                 -- Phase 15：新增 SkillPoints（Phase 6 起含宠物库存/装备）
+  ProgressionVersion = 1,          -- Phase 15：技能点经济版本标记（独立于 DataVersion，控制进度迁移）
   Coins = 0, Level = 1, XP = 0,
+  SkillPoints = 0,                 -- Phase 15：升级累计的技能点（暂不可消费）
   CompletedTasks = {},             -- [taskId] = 完成次数
   Inventory = { Pets = { { uid, petId, acquiredAt } } },  -- Phase 6
   EquippedPets = { "starter_toast_1" },                    -- Phase 6（数组，单槽）
@@ -111,8 +114,10 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
   Task = { currentTaskId, currentTaskProgress, taskChainIndex },  -- Phase 3，持久化于 Phase 4
 }
 ```
-经验规则：`XP_PER_LEVEL = 100`，XP 满 100 自动升级并归零进入下一级。
-持久化与迁移见 [`Phase4-Persistence.md`](Phase4-Persistence.md)；宠物拥有/装备见 [`Phase6-PetInventory.md`](Phase6-PetInventory.md)。
+经验规则（Phase 15）：升到下一级所需 XP = `floor(100 * Level^2)`（集中于 `PlayerDataService.GetXPRequiredForLevel`；L1→2=100、L5→6=2,500、L10→11=10,000、L50→51=250,000）。
+XP 满阈值即升级、扣阈值、`SkillPoints += 1`、溢出结转；一次大额奖励可跨多级。重开（R）不重置玩家进度（Level/XP/SkillPoints/Coins/Pets）。
+持久化与迁移见 [`Phase4-Persistence.md`](Phase4-Persistence.md)；宠物拥有/装备见 [`Phase6-PetInventory.md`](Phase6-PetInventory.md)；玩家进度见 [`Phase15-PlayerProgression.md`](Phase15-PlayerProgression.md)。
+进度迁移（Phase 15）：技能点经济为全新系统，用**独立标记** `ProgressionVersion`（当前 `1`）判断是否已初始化（不看 `DataVersion`，因早期 Play Solo 曾把旧进度写成 `DataVersion=3`）。无 `ProgressionVersion` 或 `<1` 的存档把 `Level/XP/SkillPoints` **重置**为 `1/0/0` 并标记 `ProgressionVersion=1`，金币/宠物/装备/任务等保留；`ProgressionVersion>=1` 的存档正常保留进度（不重复重置）。
 
 ## 下一步的扩展点（给后续 CCGS / Cursor）
 

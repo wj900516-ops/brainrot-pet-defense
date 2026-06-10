@@ -8,6 +8,7 @@ local EnemyConfig = {
 		speed        = 4,        -- 移动速度 studs/秒（Phase 8 调平：8→4，给宠物足够输出时间）
 		baseDamage   = 1,        -- 到达基地时造成的伤害
 		killReward   = 15,       -- 击杀奖励金币
+		xpReward     = 20,       -- Phase 15：击杀奖励经验（普通怪：小额）
 		-- 以后扩展:
 		-- model     = "LagBlob",
 		-- isBoss    = false,
@@ -21,7 +22,8 @@ local EnemyConfig = {
 		health       = 30,       -- Boss 基础血量（×Boss 倍率后远高于普通敌人）
 		speed        = 4,        -- Boss 基础速度（×Boss 倍率后比普通敌人更慢）
 		baseDamage   = 1,        -- 逃逸时对基地的伤害（与普通一致，仍走 OnEnemyEscaped 扣 1）
-		killReward   = 18,       -- Boss 基础奖励（×Boss 倍率后远高于普通击杀）
+		killReward   = 18,       -- Boss 基础金币奖励（×Boss 倍率后远高于普通击杀）
+		xpReward     = 30,       -- Phase 15：Boss 基础经验（×Boss 倍率 5+tier → 约 180/210/240…，远高于普通 20）
 		size         = Vector3.new(6, 6, 6),         -- 更大体型（EnemyService 支持 size 覆盖）
 		color        = Color3.fromRGB(150, 60, 200), -- 紫色，便于 QA 辨识 Boss
 		isBoss       = true,

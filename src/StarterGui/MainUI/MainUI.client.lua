@@ -26,7 +26,10 @@ screenGui.Parent = playerGui
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Position = UDim2.fromOffset(16, 16)
+-- Phase 15：锚定到左下角，避开默认 Roblox 顶部聊天/翻译浮层（原 (16,16) 在左上角会被聊天遮挡）。
+-- 仅改位置/锚点；尺寸与样式保持不变，Coins / Level / XP / Skill Points 仍全部可见。
+panel.AnchorPoint = Vector2.new(0, 1)
+panel.Position = UDim2.new(0, 16, 1, -16)
 panel.Size = UDim2.fromOffset(340, 294)
 panel.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
 panel.BackgroundTransparency = 0.08
@@ -139,6 +142,7 @@ end
 local coinsLabel = makeStatRow("Coins", "Coins", "--")
 local levelLabel = makeStatRow("Level", "Level", "--")
 local xpLabel = makeStatRow("XP", "XP", "-- / --")
+local skillPointsLabel = makeStatRow("SkillPoints", "Skill Points", "--") -- Phase 15
 local taskTitleLabel = makeLabel("TaskTitleLabel", "Current Task: --", 42, 16)
 local taskProgLabel = makeLabel("TaskProgressLabel", "Progress: --", 24, 15, Color3.fromRGB(205, 211, 230))
 
@@ -190,6 +194,7 @@ local function updateData(data)
 	coinsLabel.Text = string.format("%d", data.Coins or 0)
 	levelLabel.Text = string.format("%d", data.Level or 1)
 	xpLabel.Text = string.format("%d / %d", data.XP or 0, data.XpForNextLevel or 100)
+	skillPointsLabel.Text = string.format("%d", data.SkillPoints or 0) -- Phase 15
 end
 
 local function updateTask(taskData)
@@ -207,7 +212,12 @@ local function showReward(reward)
 	if not reward then
 		return
 	end
-	feedbackLabel.Text = string.format("+%d Coins, +%d XP!", reward.coinsAdded or 0, reward.xpAdded or 0)
+	local text = string.format("+%d Coins, +%d XP!", reward.coinsAdded or 0, reward.xpAdded or 0)
+	if reward.leveledUp then
+		local sp = reward.skillPointsAdded or 1
+		text = text .. string.format("  Level Up! +%d Skill Point%s", sp, sp > 1 and "s" or "")
+	end
+	feedbackLabel.Text = text
 	feedbackLabel.TextTransparency = 1
 	feedbackScale.Scale = 0.95
 	feedbackToken += 1
