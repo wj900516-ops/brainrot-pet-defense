@@ -26,7 +26,10 @@ screenGui.Parent = playerGui
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Position = UDim2.fromOffset(16, 16)
+-- Phase 15：锚定到左下角，避开默认 Roblox 顶部聊天/翻译浮层（原 (16,16) 在左上角会被聊天遮挡）。
+-- 仅改位置/锚点；尺寸与样式保持不变，Coins / Level / XP / Skill Points 仍全部可见。
+panel.AnchorPoint = Vector2.new(0, 1)
+panel.Position = UDim2.new(0, 16, 1, -16)
 panel.Size = UDim2.fromOffset(340, 294)
 panel.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
 panel.BackgroundTransparency = 0.08

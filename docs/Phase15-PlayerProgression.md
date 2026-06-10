@@ -9,7 +9,7 @@
 - 击杀走既有奖励通道 `RewardService.GiveReward(player, { rewardCoins, rewardXP })`（任务完成也共用此路径）。
 - 升级与技能点累计集中在 `PlayerDataService.AddXP`（服务端权威）。
 - XP 曲线集中在单一 helper `PlayerDataService.GetXPRequiredForLevel(level)`，随等级递增以节流后期产出。
-- 持久化 schema 从 **v2 → v3**：新增 `SkillPoints`。**这是全新的技能点进度经济** —— 旧版 v1/v2 的 `Level`/`XP` 与之不兼容，故迁移时进度重置为 `1/0/0`（金币/宠物等保留，见 §6）。DataStore 名称不变。
+- 持久化 schema 从 **v2 → v3**：新增 `SkillPoints` 与 **独立的进度版本标记 `ProgressionVersion = 1`**。**这是全新的技能点进度经济** —— 旧版 `Level`/`XP` 与之不兼容，故首次迁移时进度重置为 `1/0/0`（金币/宠物等保留，见 §6）。DataStore 名称不变。
 
 ## 2. Player Fantasy（玩家体验）
 
@@ -57,20 +57,25 @@ xpRequired(level) = floor(100 * level ^ 2)
 - XP 复用 Phase 14 的 **同一 `rewardMult`**（普通怪 = 1；Boss = `5 + tier`），与金币缩放一致。
 - Boss XP 显著高于普通怪，但 Tier 1 约 180（在平方曲线下 ≈ 早期约 1 级），里程碑感强而不至于早期暴涨。
 
-## 6. Data Migration（v2 → v3）
+## 6. Data Migration（进度经济初始化）
 
-Phase 15 引入**全新的技能点进度经济**。旧版 v1/v2 的 `Level`/`XP` 来自不同的等级体系，与新经济不兼容
-（迁移后会出现"高等级却 0 技能点、首个技能点需数百万 XP"的坏体验）。因此迁移**把玩家进度当作新系统重置**。
+Phase 15 引入**全新的技能点进度经济**。旧版 `Level`/`XP` 来自不同的等级体系，与新经济不兼容
+（迁移后会出现"高等级却 0 技能点、首个技能点需数百万 XP"的坏体验）。因此迁移**把玩家进度当作新系统初始化一次**。
 
-- `DATASTORE_NAME = "PlayerData_v1"`（**不变**）；`CURRENT_DATA_VERSION = 3`（**不变**）。
+**为什么用独立的 `ProgressionVersion` 而非 `DataVersion`**：早期 Play Solo 曾把"带旧版 Level/XP"的存档写成
+`DataVersion = 3`。若用 `DataVersion >= 3` 判断，会误把这些遗留进度当作"新经济已初始化"而保留。
+因此用一个**专门的进度标记** `ProgressionVersion` 来判断新经济是否已初始化。
+
+- `DATASTORE_NAME = "PlayerData_v1"`（**不变**）；`CURRENT_DATA_VERSION = 3`（**不变**）；新增 `ProgressionVersion`（当前 = `1`）。
 - 迁移即 `reconcile`：以全新默认数据为底，逐字段合并存档。
-- **进度字段按版本处理**（`PROGRESSION_SCHEMA_VERSION = 3`，用 `version >= 3` 判断）：
-  - 存档 **< v3**（v1/v2）→ **重置进度**为 `Level 1 / XP 0 / SkillPoints 0`（开启新经济）。
-  - 存档 **≥ v3** → **正常保留** `Level / XP / SkillPoints`（**不会**每次加载重置）。
+- **进度字段按 `ProgressionVersion` 处理**（`CURRENT_PROGRESSION_VERSION = 1`，用 `loadedProgVer >= 1` 判断）：
+  - 存档 **无 `ProgressionVersion` 或 < 1**（含"`DataVersion` 已是 3 但缺该标记"的早期存档）→ **重置进度**为
+    `Level 1 / XP 0 / SkillPoints 0`，并写入 `ProgressionVersion = 1`。
+  - 存档 **`ProgressionVersion >= 1`** → **正常保留** `Level / XP / SkillPoints / ProgressionVersion`（**不会**每次加载重置）。
 - **始终保留**（与版本无关）：`Coins`、`Inventory.Pets`、`EquippedPets`、`CompletedTasks`、`Settings`、`Task` 及其它既有数据。
-- 迁移**只发生一次**：`reconcile` 末尾把 `DataVersion` 写为 3；保存后即为 v3，后续加载保留进度。
+- 重置**只发生一次**：写入 `ProgressionVersion = 1` 并保存后，后续加载走"保留"分支。
 - 不丢弃金币/宠物（不 wipe）。加载失败的会话仍标记"不可保存"，避免覆盖云端好数据。
-- 新玩家（云端无存档）走 `defaultData()` 直接得 `1/0/0`（不经 reconcile）。
+- 新玩家（云端无存档）走 `defaultData()` 直接得 `1/0/0` 且 `ProgressionVersion = 1`（不经 reconcile）。
 
 ## 7. RewardService / Public Data
 
@@ -81,6 +86,8 @@ Phase 15 引入**全新的技能点进度经济**。旧版 v1/v2 的 `Level`/`XP
 
 - **MainUI**（小幅、非重设计）：新增一行 `Skill Points` 状态显示；`XP` 行沿用既有 `XP / XpForNextLevel`（阈值现随等级变化）；
   奖励反馈在升级时追加 `Level Up! +N Skill Point(s)`。
+- **MainUI 面板位置**（小幅）：状态面板从左上角 `(16,16)` 改为**锚定左下角**（`AnchorPoint (0,1)`，`Position (0,16,1,-16)`），
+  避开默认 Roblox 顶部聊天/翻译浮层；尺寸与样式不变，`Coins / Level / XP / Skill Points` 仍全部可见。
 - **服务端日志**（QA 可见）：`[Reward] <player> 击杀 <enemy>：+C Coins，+X XP（当前 XP / Level / SP）`；升级时 `[Progression] <player> 升级！现 Level N，+K 技能点（共 S）`。
 
 ## 9. Edge Cases（边界）
@@ -104,7 +111,7 @@ Phase 15 引入**全新的技能点进度经济**。旧版 v1/v2 的 `Level`/`XP
 
 ## 12. Acceptance Criteria（验收）
 
-1. v2 存档迁移到 v3：金币/宠物/装备/任务保留；玩家进度**重置**为 `Level 1 / XP 0 / SkillPoints 0`（新经济）。v3 存档再次加载**保留**进度（不重置）。
+1. 旧存档（无 `ProgressionVersion` 或 <1，含"DataVersion 已是 3 但缺该标记"）迁移：金币/宠物/装备/任务保留；玩家进度**重置**为 `Level 1 / XP 0 / SkillPoints 0` 并标记 `ProgressionVersion = 1`。`ProgressionVersion >= 1` 的存档再次加载**保留**进度（不重置）。
 2. 新玩家 `Level 1 / XP 0 / SkillPoints 0`。
 3. 杀普通 `LagBlob` 得金币 + 小额 XP；杀 `BossLagBlob` 得更高金币 + 更高 XP。
 4. 逃逸（含 Boss）不发金币、不发 XP。

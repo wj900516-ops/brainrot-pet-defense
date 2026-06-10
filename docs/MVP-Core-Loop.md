@@ -104,6 +104,7 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
 ```lua
 {
   DataVersion = 3,                 -- Phase 15：新增 SkillPoints（Phase 6 起含宠物库存/装备）
+  ProgressionVersion = 1,          -- Phase 15：技能点经济版本标记（独立于 DataVersion，控制进度迁移）
   Coins = 0, Level = 1, XP = 0,
   SkillPoints = 0,                 -- Phase 15：升级累计的技能点（暂不可消费）
   CompletedTasks = {},             -- [taskId] = 完成次数
@@ -116,7 +117,7 @@ RemoteEvent 实例由服务端在运行时创建于 `ReplicatedStorage/Remotes/`
 经验规则（Phase 15）：升到下一级所需 XP = `floor(100 * Level^2)`（集中于 `PlayerDataService.GetXPRequiredForLevel`；L1→2=100、L5→6=2,500、L10→11=10,000、L50→51=250,000）。
 XP 满阈值即升级、扣阈值、`SkillPoints += 1`、溢出结转；一次大额奖励可跨多级。重开（R）不重置玩家进度（Level/XP/SkillPoints/Coins/Pets）。
 持久化与迁移见 [`Phase4-Persistence.md`](Phase4-Persistence.md)；宠物拥有/装备见 [`Phase6-PetInventory.md`](Phase6-PetInventory.md)；玩家进度见 [`Phase15-PlayerProgression.md`](Phase15-PlayerProgression.md)。
-v2→v3 迁移（Phase 15）：技能点经济为全新系统 —— v3 之前的存档把 `Level/XP/SkillPoints` **重置**为 `1/0/0`，金币/宠物/装备/任务等保留；v3+ 存档正常保留进度（不重复重置）。
+进度迁移（Phase 15）：技能点经济为全新系统，用**独立标记** `ProgressionVersion`（当前 `1`）判断是否已初始化（不看 `DataVersion`，因早期 Play Solo 曾把旧进度写成 `DataVersion=3`）。无 `ProgressionVersion` 或 `<1` 的存档把 `Level/XP/SkillPoints` **重置**为 `1/0/0` 并标记 `ProgressionVersion=1`，金币/宠物/装备/任务等保留；`ProgressionVersion>=1` 的存档正常保留进度（不重复重置）。
 
 ## 下一步的扩展点（给后续 CCGS / Cursor）
 
