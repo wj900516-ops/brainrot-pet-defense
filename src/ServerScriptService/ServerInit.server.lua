@@ -27,6 +27,8 @@ local EnemyService = require(Services:WaitForChild("EnemyService"))
 local WaveService = require(Services:WaitForChild("WaveService"))
 local CombatService = require(Services:WaitForChild("CombatService"))
 local TowerService = require(Services:WaitForChild("TowerService"))
+local SkillEffectResolver = require(Services:WaitForChild("SkillEffectResolver")) -- Phase 16B
+local SkillTreeService = require(Services:WaitForChild("SkillTreeService")) -- Phase 16B
 
 -- 加载远程入口（服务端在此创建 RemoteEvent 实例）
 local Net = require(ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Net"))
@@ -35,6 +37,7 @@ local taskRemote = Net.TaskRemote()
 local petRemote = Net.PetRemote()
 local towerRemote = Net.TowerRemote()
 local restartRemote = Net.RestartRemote()
+local skillRemote = Net.SkillRemote() -- Phase 16B
 
 -- Phase 13：向客户端推送会话是否失败（用于显示/隐藏"按 R 重开"提示）。
 local function pushSessionState(player)
@@ -49,6 +52,11 @@ end
 -- ---------- 向客户端推送 ----------
 local function pushData(player)
 	playerDataRemote:FireClient(player, "Update", PlayerDataService.GetPublicData(player))
+end
+
+-- Phase 16B：推送技能树公开状态（点数 / 各启用技能的等级 / 上限 / 花费）给调试 UI。
+local function pushSkillState(player)
+	skillRemote:FireClient(player, "State", SkillTreeService.GetPublicState(player))
 end
 
 local function pushTask(player)
@@ -87,6 +95,12 @@ local function pushProgressResult(player, result)
 		end
 		pushData(player)
 	end
+
+	-- Phase 16B 修复：任务奖励若导致升级（技能点 +N）→ 同步刷新 SkillTreeDebug（与 onEnemyKilled 一致），
+	-- 否则面板的技能点数字会停留在旧值（MainUI 由 pushData 更新，但调试 UI 走 SkillRemote）。
+	if result.reward and (result.reward.leveledUp or (result.reward.skillPointsAdded or 0) > 0) then
+		pushSkillState(player)
+	end
 end
 
 -- ---------- 玩家生命周期 ----------
@@ -101,6 +115,10 @@ local function onPlayerAdded(player)
 
 	-- Phase 6：确保拥有并装备起始宠物（首次/缺失时授予，不重复）。需在 SpawnPet 之前。
 	PlayerDataService.EnsureStarterPet(player, PetService.GetStarterPetId())
+
+	-- Phase 16B：技能树配置感知清洗（丢弃未知 id、按 maxRank 夹紧），再重建效果缓存。
+	SkillTreeService.SanitizeOnLoad(player)
+	SkillEffectResolver.Rebuild(player)
 
 	-- 加载完成后再恢复任务状态（按存档 id/进度，或起始任务）。
 	TaskService.RestoreOrAssign(player)
@@ -117,6 +135,9 @@ local function onPlayerAdded(player)
 
 	-- Phase 13：推送当前会话状态（若已失败，客户端显示"按 R 重开"）。
 	pushSessionState(player)
+
+	-- Phase 16B：推送技能树初始状态给调试 UI（客户端打开时也会再 RequestState）。
+	pushSkillState(player)
 end
 
 local function onPlayerRemoving(player)
@@ -128,6 +149,8 @@ local function onPlayerRemoving(player)
 	PlayerDataService.ClearData(player)
 	TaskService.ClearTask(player)
 	lastPetMutation[player] = nil -- 清理宠物变更去抖状态
+	SkillEffectResolver.Clear(player) -- Phase 16B：清效果缓存
+	SkillTreeService.ClearPlayer(player) -- Phase 16B：清消费去抖/锁
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -195,8 +218,14 @@ local function onEnemyKilled(player, enemy)
 	end
 	-- 复用 RewardService.GiveReward(player, task)：task 只需带 rewardCoins/rewardXP 字段。
 	-- Phase 15：击杀同时发放 XP（enemy.xpReward，服务端权威；普通小额、Boss 更高）。
+	-- Phase 16B：eco_kill_coins 提升击杀金币（CoinMultiplier，服务端权威；普通与 Boss 击杀都生效）。
+	--   仅作用于"击杀金币"；XP 不受影响（eco_xp_bonus 本阶段未启用）。逃逸不进此路径 → 不发金币/XP。
+	local coinBonus = math.max(0, SkillEffectResolver.GetNumber(player, "CoinMultiplier", 0))
+	local baseCoins = enemy.reward or 0
+	-- 金币必须为整数：四舍五入（+0.5 下取整），使低基数下 rank 1 也有可见的 +5%（如 15 -> 16）。
+	local coins = math.floor(baseCoins * (1 + coinBonus) + 0.5)
 	local reward = RewardService.GiveReward(player, {
-		rewardCoins = enemy.reward or 0,
+		rewardCoins = coins,
 		rewardXP = enemy.xpReward or 0,
 	})
 	pushData(player) -- 刷新 MainUI 的金币/等级/经验/技能点
@@ -221,6 +250,8 @@ local function onEnemyKilled(player, enemy)
 				reward.skillPointsAdded or 0,
 				reward.skillPoints or 0
 			))
+			-- Phase 16B 修复：升级使技能点 +N → 同步刷新 SkillTreeDebug 的点数（否则面板停留在旧值）。
+			pushSkillState(player)
 		end
 		-- 奖励反馈：复用既有 taskRemote "Reward" 通道（MainUI 已监听）。Phase 15 追加升级文本。
 		taskRemote:FireClient(player, "Reward", reward)
@@ -342,4 +373,29 @@ petRemote.OnServerEvent:Connect(function(player, action, uid)
 	-- 未知 action：安全忽略。
 end)
 
-print("[ServerInit] Ready. Phase 13 run restart online.")
+-- ---------- Phase 16B：技能树（服务端权威消费） ----------
+-- 客户端只发意图：RequestState（只读）/ SpendPoint(+skillId)。
+-- 所有 rank/cost/前置/点数判定都在 SkillTreeService；客户端不能伪造任何数值。
+-- SkillTreeService 内置每玩家去抖（0.2s）+ 处理锁，防双击/宏重复扣点。
+skillRemote.OnServerEvent:Connect(function(player, action, skillId)
+	if action == "RequestState" then
+		pushSkillState(player) -- 只读
+	elseif action == "SpendPoint" then
+		local result = SkillTreeService.TrySpend(player, skillId)
+		if result and result.success then
+			pushData(player) -- 刷新 MainUI 的技能点数字
+			pushSkillState(player) -- 刷新调试 UI 的等级/点数
+			print(string.format(
+				"[SkillTree] %s 升级 %s -> rank %d（剩余 SP %d）",
+				player.Name,
+				tostring(result.skillId),
+				result.rank or 0,
+				result.skillPoints or 0
+			))
+		end
+		skillRemote:FireClient(player, "Result", result) -- 成功/失败都回推（含 reason）
+	end
+	-- 未知 action：安全忽略。
+end)
+
+print("[ServerInit] Ready. Phase 16B skill tree MVP online.")
