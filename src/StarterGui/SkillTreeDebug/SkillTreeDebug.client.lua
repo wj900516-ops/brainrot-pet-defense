@@ -3,6 +3,13 @@
 -- Phase 16B：极简技能树调试 UI（独立 ScreenGui，【不改 MainUI】）。
 -- 列出 3 个启用技能，显示等级/上限/花费，点 [+] 发送"消费意图"；服务端校验后回推结果。
 -- 客户端只发意图（RequestState / SpendPoint+skillId）；从不发送 rank/cost/点数/伤害/奖励。
+--
+-- Phase 16C：玩家面板 SkillTreeUI 上线后，本调试面板【默认关闭】，避免与玩家面板同时出现。
+-- QA 需要时把 DEBUG_PANEL_ENABLED 改为 true 即可恢复（仅供开发测试，正式玩家不可见）。
+local DEBUG_PANEL_ENABLED = false
+if not DEBUG_PANEL_ENABLED then
+	return
+end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
